@@ -25,6 +25,8 @@ class _SyncScreenState extends State<SyncScreen> {
   String _taskId = '';
   late DateTime _targetDate;
   Timer? _pollingTimer;
+  bool _fromCache = false;
+  DateTime? _cachedAt;
 
   @override
   void initState() {
@@ -40,19 +42,21 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   Future<void> _loadRuns() async {
-    final baseUrl = context.read<AppState>().apiBaseUrl;
+    final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
       _error = '';
     });
 
     try {
-      final raw = await ApiService.fetchJson(baseUrl, '/api/sync/runs');
+      final response = await appState.fetchJson('/api/sync/runs');
       if (!mounted) {
         return;
       }
       setState(() {
-        _runs = SyncRunsData(raw);
+        _runs = SyncRunsData(response.data);
+        _fromCache = response.fromCache;
+        _cachedAt = response.cachedAt;
         _isLoading = false;
       });
     } catch (error) {
@@ -81,15 +85,14 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   Future<void> _startSync() async {
-    final baseUrl = context.read<AppState>().apiBaseUrl;
+    final appState = context.read<AppState>();
     setState(() {
       _isSubmitting = true;
       _error = '';
     });
 
     try {
-      final response = await ApiService.postJson(
-        baseUrl,
+      final response = await appState.postJson(
         '/api/sync',
         body: {
           'target_date': ApiService.formatDate(_targetDate),
@@ -126,10 +129,13 @@ class _SyncScreenState extends State<SyncScreen> {
       return;
     }
 
-    final baseUrl = context.read<AppState>().apiBaseUrl;
+    final appState = context.read<AppState>();
     try {
-      final raw = await ApiService.fetchJson(baseUrl, '/api/sync/$_taskId');
-      final status = SyncTaskStatusData(raw).status;
+      final response = await appState.fetchJson(
+        '/api/sync/$_taskId',
+        allowStaleOnError: false,
+      );
+      final status = SyncTaskStatusData(response.data).status;
       if (!mounted) {
         return;
       }
@@ -191,6 +197,25 @@ class _SyncScreenState extends State<SyncScreen> {
             'EasyPOS 백엔드에서 특정 날짜의 매출을 적재합니다.',
             style: TextStyle(color: Color(0xFF64748B)),
           ),
+          if (_fromCache && _cachedAt != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7ED),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: const Color(0xFFFED7AA)),
+              ),
+              child: Text(
+                '오프라인 캐시 · ${UiFormat.compactDateTime(_cachedAt?.toIso8601String())}',
+                style: const TextStyle(
+                  color: Color(0xFF9A3412),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           Panel(
             title: '동기화 실행',
@@ -281,7 +306,8 @@ class _SyncScreenState extends State<SyncScreen> {
                                   run['status']?.toString() ?? '-',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w700,
-                                    color: _statusColor(run['status']?.toString()),
+                                    color:
+                                        _statusColor(run['status']?.toString()),
                                   ),
                                 ),
                                 const SizedBox(height: 4),

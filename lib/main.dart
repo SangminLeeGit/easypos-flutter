@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'screens/analytics.dart';
 import 'screens/dashboard.dart';
+import 'screens/login.dart';
 import 'screens/settings.dart';
 import 'screens/sync.dart';
 import 'state/app_state.dart';
@@ -41,8 +42,31 @@ class EasyPosApp extends StatelessWidget {
           elevation: 0,
         ),
       ),
-      home: const MainLayout(),
+      home: const AppRoot(),
     );
+  }
+}
+
+class AppRoot extends StatelessWidget {
+  const AppRoot({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+
+    if (appState.isInitializing) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF0D9488)),
+        ),
+      );
+    }
+
+    if (!appState.isAuthenticated) {
+      return const LoginScreen();
+    }
+
+    return const MainLayout();
   }
 }
 
@@ -72,6 +96,8 @@ class _MainLayoutState extends State<MainLayout> {
 
   @override
   Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -87,9 +113,41 @@ class _MainLayoutState extends State<MainLayout> {
         ),
       ),
       body: SafeArea(
-        child: IndexedStack(
-          index: _currentIndex,
-          children: _screens,
+        child: Column(
+          children: [
+            if (appState.offlineMode)
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                color: const Color(0xFFECFEFF),
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.cloud_off_outlined,
+                      size: 18,
+                      color: Color(0xFF155E75),
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '오프라인 캐시 모드로 표시 중입니다.',
+                        style: TextStyle(
+                          color: Color(0xFF155E75),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: IndexedStack(
+                index: _currentIndex,
+                children: _screens,
+              ),
+            ),
+          ],
         ),
       ),
       bottomNavigationBar: NavigationBar(

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/dashboard_model.dart';
-import '../services/api.dart';
 import '../state/app_state.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/panel.dart';
@@ -25,6 +24,8 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
   bool _isLoading = true;
   String _error = '';
   late String _targetDate;
+  bool _fromCache = false;
+  DateTime? _cachedAt;
 
   @override
   void initState() {
@@ -34,19 +35,21 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
   }
 
   Future<void> _fetchData() async {
-    final baseUrl = context.read<AppState>().apiBaseUrl;
+    final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
       _error = '';
     });
 
     try {
-      final raw = await ApiService.fetchJson(baseUrl, '/api/days/$_targetDate');
+      final response = await appState.fetchJson('/api/days/$_targetDate');
       if (!mounted) {
         return;
       }
       setState(() {
-        _data = DayDetailData(raw);
+        _data = DayDetailData(response.data);
+        _fromCache = response.fromCache;
+        _cachedAt = response.cachedAt;
         _isLoading = false;
       });
     } catch (error) {
@@ -105,6 +108,30 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
                           physics: const AlwaysScrollableScrollPhysics(),
                           padding: const EdgeInsets.all(16),
                           children: [
+                            if (_fromCache && _cachedAt != null) ...[
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFF7ED),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: const Color(0xFFFED7AA),
+                                  ),
+                                ),
+                                child: Text(
+                                  '오프라인 캐시 · ${UiFormat.compactDateTime(_cachedAt?.toIso8601String())}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF9A3412),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
                             Row(
                               children: [
                                 Expanded(

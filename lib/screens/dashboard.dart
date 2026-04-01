@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/dashboard_model.dart';
-import '../services/api.dart';
 import '../state/app_state.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/panel.dart';
@@ -20,6 +19,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   DashboardSnapshot? _data;
   bool _isLoading = true;
   String _error = '';
+  bool _fromCache = false;
+  DateTime? _cachedAt;
 
   @override
   void initState() {
@@ -28,19 +29,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _fetchData() async {
-    final baseUrl = context.read<AppState>().apiBaseUrl;
+    final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
       _error = '';
     });
 
     try {
-      final raw = await ApiService.fetchJson(baseUrl, '/api/dashboard');
+      final response = await appState.fetchJson('/api/dashboard');
       if (!mounted) {
         return;
       }
       setState(() {
-        _data = DashboardSnapshot(raw);
+        _data = DashboardSnapshot(response.data);
+        _fromCache = response.fromCache;
+        _cachedAt = response.cachedAt;
         _isLoading = false;
       });
     } catch (error) {
@@ -115,6 +118,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               fontSize: 14,
             ),
           ),
+          if (_fromCache && _cachedAt != null) ...[
+            const SizedBox(height: 8),
+            _buildCacheNotice(),
+          ],
           const SizedBox(height: 16),
           _buildCardGrid([
             StatCard(
@@ -165,6 +172,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: _buildTrendItems(data),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCacheNotice() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFFED7AA)),
+      ),
+      child: Text(
+        '오프라인 캐시 · ${UiFormat.compactDateTime(_cachedAt?.toIso8601String())}',
+        style: const TextStyle(
+          color: Color(0xFF9A3412),
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
       ),
     );
   }
@@ -336,8 +362,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               UiFormat.won(delta),
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color:
-                    isPositive ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                color: isPositive
+                    ? const Color(0xFF16A34A)
+                    : const Color(0xFFDC2626),
               ),
             ),
           ],
