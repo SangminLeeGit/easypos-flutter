@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/dashboard_model.dart';
+import '../widgets/cache_notice.dart';
 import '../state/app_state.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/panel.dart';
@@ -36,12 +37,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
 
     try {
-      final response = await appState.fetchJson('/api/dashboard');
+      final response = await appState.fetchMapParsed(
+        '/api/dashboard',
+        parser: DashboardSnapshot.fromJson,
+      );
       if (!mounted) {
         return;
       }
       setState(() {
-        _data = DashboardSnapshot(response.data);
+        _data = response.data;
         _fromCache = response.fromCache;
         _cachedAt = response.cachedAt;
         _isLoading = false;
@@ -91,7 +95,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final data = _data!;
     final latest = data.latestMetrics;
     final previousDayAmount = data.recentDays.length > 1
-        ? (data.recentDays[1]['gross_amount'] as num? ?? 0)
+        ? data.recentDays[1].grossAmount
         : 0;
 
     return RefreshIndicator(
@@ -120,15 +124,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           if (_fromCache && _cachedAt != null) ...[
             const SizedBox(height: 8),
-            _buildCacheNotice(),
+            CacheNotice(cachedAt: _cachedAt),
           ],
           const SizedBox(height: 16),
           _buildCardGrid([
             StatCard(
               label: '오늘 매출',
-              value: UiFormat.won(latest['gross_amount'] as num?),
-              sub:
-                  '전일 대비 ${UiFormat.delta(latest['gross_amount'] as num?, previousDayAmount)}',
+              value: UiFormat.won(latest.grossAmount),
+              sub: '전일 대비 ${UiFormat.delta(latest.grossAmount, previousDayAmount)}',
               accent: true,
             ),
             StatCard(
@@ -145,9 +148,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             StatCard(
               label: '영수건수 / 고객',
               value:
-                  "${UiFormat.number(latest['receipt_count'] as num?)} / ${UiFormat.number(latest['customer_count'] as num?)}",
+                  '${UiFormat.number(latest.receiptCount)} / ${UiFormat.number(latest.customerCount)}',
               sub:
-                  "카드 ${UiFormat.won(latest['card_amount'] as num?)} · 현금 ${UiFormat.won(latest['cash_amount'] as num?)}",
+                  '카드 ${UiFormat.won(latest.cardAmount)} · 현금 ${UiFormat.won(latest.cashAmount)}',
             ),
           ]),
           const SizedBox(height: 16),
@@ -167,30 +170,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: _buildPaymentMix(data.paymentMix),
           ),
           Panel(
+            title: '최근 적재 이력',
+            subtitle: '백엔드 동기화 상태를 함께 확인합니다.',
+            child: _buildRecentRuns(data.recentRuns),
+          ),
+          Panel(
             title: '성장 / 주의 품목',
             subtitle: '최근 주간 비교',
             child: _buildTrendItems(data),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildCacheNotice() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF7ED),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFFED7AA)),
-      ),
-      child: Text(
-        '오프라인 캐시 · ${UiFormat.compactDateTime(_cachedAt?.toIso8601String())}',
-        style: const TextStyle(
-          color: Color(0xFF9A3412),
-          fontWeight: FontWeight.w700,
-          fontSize: 12,
-        ),
       ),
     );
   }
@@ -223,7 +212,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Column(
       children: rows.map((day) {
-        final date = day['business_date']?.toString() ?? '-';
+        final date = day.businessDate;
         return ListTile(
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
@@ -234,10 +223,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           leading: const Icon(Icons.calendar_today_outlined, size: 20),
           title: Text(UiFormat.weekday(date)),
           subtitle: Text(
-            "영수 ${UiFormat.number(day['receipt_count'] as num?)}건 · 고객 ${UiFormat.number(day['customer_count'] as num?)}명",
+            '영수 ${UiFormat.number(day.receiptCount)}건 · 고객 ${UiFormat.number(day.customerCount)}명',
           ),
           trailing: Text(
-            UiFormat.won(day['gross_amount'] as num?),
+            UiFormat.won(day.grossAmount),
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
         );
@@ -245,7 +234,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildTopItems(List<Map<String, dynamic>> items) {
+  Widget _buildTopItems(List<TopItemSummary> items) {
     if (items.isEmpty) {
       return const Text(
         '품목 데이터가 없습니다.',
@@ -259,13 +248,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           dense: true,
           contentPadding: EdgeInsets.zero,
           title: Text(
-            item['item_name']?.toString() ?? '-',
+            item.itemName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          subtitle: Text("수량 ${UiFormat.number(item['total_qty'] as num?)}개"),
+          subtitle: Text('수량 ${UiFormat.number(item.totalQty)}개'),
           trailing: Text(
-            UiFormat.won(item['total_amount'] as num?),
+            UiFormat.won(item.totalAmount),
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
         );
@@ -273,7 +262,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildPaymentMix(List<Map<String, dynamic>> items) {
+  Widget _buildPaymentMix(List<PaymentMixItem> items) {
     if (items.isEmpty) {
       return const Text(
         '결제수단 데이터가 없습니다.',
@@ -287,7 +276,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: items.map((item) {
         return Chip(
           label: Text(
-            '${item['method']} ${item['pct']}%',
+            '${item.method} ${item.pct.toStringAsFixed(1)}%',
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           avatar: const CircleAvatar(
@@ -332,7 +321,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   List<Widget> _buildTrendRows(
-    List<Map<String, dynamic>> items, {
+    List<TrendItem> items, {
     required bool isPositive,
   }) {
     if (items.isEmpty) {
@@ -345,14 +334,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     return items.map((item) {
-      final delta = item['delta'] as num? ?? 0;
+      final delta = item.delta;
       return Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Row(
           children: [
             Expanded(
               child: Text(
-                item['item_name']?.toString() ?? '-',
+                item.itemName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -371,5 +360,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       );
     }).toList(growable: false);
+  }
+  Widget _buildRecentRuns(List<SyncRun> runs) {
+    if (runs.isEmpty) {
+      return const Text(
+        '최근 적재 이력이 없습니다.',
+        style: TextStyle(color: Color(0xFF64748B)),
+      );
+    }
+
+    return Column(
+      children: runs.take(6).map((run) {
+        return ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            run.targetDate,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          subtitle: Text(
+            '시작 ${UiFormat.compactDateTime(run.startedAt)} · 완료 ${UiFormat.compactDateTime(run.finishedAt)}',
+          ),
+          trailing: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                run.status,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: switch (run.status) {
+                    'succeeded' => const Color(0xFF16A34A),
+                    'failed' => const Color(0xFFDC2626),
+                    'running' || 'pending' => const Color(0xFFB45309),
+                    _ => const Color(0xFF64748B),
+                  },
+                ),
+              ),
+              Text(
+                '${UiFormat.number(run.loadedCount)} / ${UiFormat.number(run.sourceCount)}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(growable: false),
+    );
   }
 }

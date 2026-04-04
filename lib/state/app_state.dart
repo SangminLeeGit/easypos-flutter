@@ -4,38 +4,65 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api.dart';
 import '../services/cache_store.dart';
 
-class CachedMapResult {
-  final Map<String, dynamic> data;
+class CachedDataResult<T> {
+  final T data;
   final bool fromCache;
   final DateTime? cachedAt;
 
-  const CachedMapResult({
+  const CachedDataResult({
     required this.data,
     required this.fromCache,
     required this.cachedAt,
   });
 }
 
-class CachedListResult {
-  final List<dynamic> data;
-  final bool fromCache;
-  final DateTime? cachedAt;
+enum UserRole {
+  viewer,
+  operator,
+  admin,
+}
 
-  const CachedListResult({
-    required this.data,
-    required this.fromCache,
-    required this.cachedAt,
-  });
+extension UserRoleAccess on UserRole {
+  static UserRole fromString(String? value) {
+    switch (value?.trim().toLowerCase()) {
+      case 'admin':
+        return UserRole.admin;
+      case 'operator':
+        return UserRole.operator;
+      default:
+        return UserRole.viewer;
+    }
+  }
+
+  int get rank {
+    switch (this) {
+      case UserRole.viewer:
+        return 0;
+      case UserRole.operator:
+        return 1;
+      case UserRole.admin:
+        return 2;
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case UserRole.viewer:
+        return 'viewer';
+      case UserRole.operator:
+        return 'operator';
+      case UserRole.admin:
+        return 'admin';
+    }
+  }
+
+  bool allows(UserRole required) => rank >= required.rank;
 }
 
 class AppState extends ChangeNotifier {
   AppState() : _apiBaseUrl = ApiService.defaultBaseUrl();
 
   static const String _apiBaseUrlKey = 'api_base_url';
-  static const String _sessionCookieKey = 'auth_session_cookie';
-  static const String _csrfTokenKey = 'auth_csrf_token';
-  static const String _loginIdKey = 'auth_login_id';
-  static const String _roleKey = 'auth_role';
   static const String _setupRequiredKey = 'auth_setup_required';
   static const String _bootstrapConfiguredKey = 'auth_bootstrap_configured';
 
@@ -62,8 +89,18 @@ class AppState extends ChangeNotifier {
   bool get bootstrapConfigured => _bootstrapConfigured;
   String? get loginId => _loginId;
   String? get role => _role;
+  UserRole get userRole => UserRoleAccess.fromString(_role);
   DateTime? get lastSessionSyncAt => _lastSessionSyncAt;
   int get cacheEntryCount => _cacheEntryCount;
+  bool get hasOperatorAccess => canAccess(UserRole.operator);
+  bool get hasAdminAccess => canAccess(UserRole.admin);
+
+  bool canAccess(UserRole requiredRole) {
+    if (!_authenticated) {
+      return false;
+    }
+    return userRole.allows(requiredRole);
+  }
 
   Future<void> load() async {
     _prefs = await SharedPreferences.getInstance();
@@ -74,23 +111,14 @@ class AppState extends ChangeNotifier {
       _apiBaseUrl = ApiService.normalizeBaseUrl(savedBaseUrl);
     }
 
-    _sessionCookie = _prefs.getString(_sessionCookieKey);
-    _csrfToken = _prefs.getString(_csrfTokenKey);
-    _loginId = _prefs.getString(_loginIdKey);
-    _role = _prefs.getString(_roleKey);
     _setupRequired = _prefs.getBool(_setupRequiredKey) ?? false;
     _bootstrapConfigured = _prefs.getBool(_bootstrapConfiguredKey) ?? false;
     _refreshCacheCount();
 
-    if (_hasPersistedSession) {
-      _authenticated = true;
-      _offlineMode = true;
-    }
-
     try {
       await refreshSession(notify: false);
     } catch (_) {
-      // Keep the persisted session for offline cached browsing.
+      // Keep setup hints and require a fresh login if the backend is unavailable.
     } finally {
       _isInitializing = false;
       notifyListeners();
@@ -121,16 +149,12 @@ class AppState extends ChangeNotifier {
         _loginId = user['login_id']?.toString();
         _role = user['role']?.toString();
         _csrfToken = payload['csrf_token']?.toString();
-        await _persistAuthState();
       } else {
         await _clearAuthState(preserveSetupFlags: true);
       }
     } on ApiException catch (error) {
       if (error.statusCode == 401) {
         await _clearAuthState(preserveSetupFlags: true);
-      } else if (_hasPersistedSession) {
-        _authenticated = true;
-        _offlineMode = true;
       }
       rethrow;
     } finally {
@@ -173,7 +197,6 @@ class AppState extends ChangeNotifier {
     _role = user['role']?.toString();
     _setupRequired = false;
     _lastSessionSyncAt = DateTime.now();
-    await _persistAuthState();
     await _persistSetupState();
     _refreshCacheCount();
     notifyListeners();
@@ -216,10 +239,38 @@ class AppState extends ChangeNotifier {
     return removed;
   }
 
-  Future<CachedMapResult> fetchJson(
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final trimmedCurrent = currentPassword.trim();
+    final trimmedNext = newPassword.trim();
+    if (trimmedCurrent.isEmpty || trimmedNext.isEmpty) {
+      throw const ApiException('현재 비밀번호와 새 비밀번호를 모두 입력하세요.');
+    }
+    if (trimmedNext.length < 12) {
+      throw const ApiException('새 비밀번호는 최소 12자 이상이어야 합니다.');
+    }
+
+    final scope = _cacheScope;
+    await _postJsonWithAuth(
+      '/api/auth/change-password',
+      body: {
+        'current_password': trimmedCurrent,
+        'new_password': trimmedNext,
+      },
+    );
+    await _clearAuthState();
+    await _cacheStore.clearScope(scope);
+    _refreshCacheCount();
+    notifyListeners();
+  }
+
+  Future<CachedDataResult<T>> fetchMapParsed<T>(
     String endpoint, {
     Map<String, Object?>? params,
-    Duration cacheTtl = const Duration(minutes: 15),
+    required T Function(Map<String, dynamic> json) parser,
+    Duration cacheTtl = const Duration(minutes: 30),
     bool allowStaleOnError = true,
   }) async {
     final cacheEntry = _cacheStore.read(
@@ -228,6 +279,8 @@ class AppState extends ChangeNotifier {
       endpoint: endpoint,
       params: params,
     );
+    final canUseCache = _isCacheFresh(cacheEntry, cacheTtl);
+    final wasOffline = _offlineMode;
 
     try {
       final response = await ApiService.fetchJson(
@@ -240,7 +293,6 @@ class AppState extends ChangeNotifier {
       if (response.sessionCookie != null &&
           response.sessionCookie!.isNotEmpty) {
         _sessionCookie = response.sessionCookie;
-        await _persistAuthState();
       }
       await _cacheStore.write(
         scope: _cacheScope,
@@ -250,30 +302,41 @@ class AppState extends ChangeNotifier {
         data: response.data,
       );
       _refreshCacheCount();
-      return CachedMapResult(
-        data: response.data,
+      return CachedDataResult<T>(
+        data: parser(response.data),
         fromCache: false,
         cachedAt: DateTime.now(),
       );
     } on ApiException catch (error) {
       await _handleAuthError(error);
-      if (allowStaleOnError && cacheEntry != null && cacheEntry.data is Map) {
+      if (allowStaleOnError &&
+          canUseCache &&
+          cacheEntry != null &&
+          cacheEntry.data is Map) {
+        final changed = !_offlineMode;
         _offlineMode = true;
-        notifyListeners();
-        return CachedMapResult(
-          data: Map<String, dynamic>.from(cacheEntry.data as Map),
+        if (changed) {
+          notifyListeners();
+        }
+        return CachedDataResult<T>(
+          data: parser(Map<String, dynamic>.from(cacheEntry.data as Map)),
           fromCache: true,
           cachedAt: cacheEntry.cachedAt,
         );
       }
       rethrow;
+    } finally {
+      if (!_offlineMode && wasOffline) {
+        notifyListeners();
+      }
     }
   }
 
-  Future<CachedListResult> fetchJsonList(
+  Future<CachedDataResult<T>> fetchListParsed<T>(
     String endpoint, {
     Map<String, Object?>? params,
-    Duration cacheTtl = const Duration(minutes: 15),
+    required T Function(List<dynamic> json) parser,
+    Duration cacheTtl = const Duration(minutes: 30),
     bool allowStaleOnError = true,
   }) async {
     final cacheEntry = _cacheStore.read(
@@ -282,6 +345,8 @@ class AppState extends ChangeNotifier {
       endpoint: endpoint,
       params: params,
     );
+    final canUseCache = _isCacheFresh(cacheEntry, cacheTtl);
+    final wasOffline = _offlineMode;
 
     try {
       final response = await ApiService.fetchJsonList(
@@ -294,7 +359,6 @@ class AppState extends ChangeNotifier {
       if (response.sessionCookie != null &&
           response.sessionCookie!.isNotEmpty) {
         _sessionCookie = response.sessionCookie;
-        await _persistAuthState();
       }
       await _cacheStore.write(
         scope: _cacheScope,
@@ -304,23 +368,33 @@ class AppState extends ChangeNotifier {
         data: response.data,
       );
       _refreshCacheCount();
-      return CachedListResult(
-        data: response.data,
+      return CachedDataResult<T>(
+        data: parser(response.data),
         fromCache: false,
         cachedAt: DateTime.now(),
       );
     } on ApiException catch (error) {
       await _handleAuthError(error);
-      if (allowStaleOnError && cacheEntry != null && cacheEntry.data is List) {
+      if (allowStaleOnError &&
+          canUseCache &&
+          cacheEntry != null &&
+          cacheEntry.data is List) {
+        final changed = !_offlineMode;
         _offlineMode = true;
-        notifyListeners();
-        return CachedListResult(
-          data: List<dynamic>.from(cacheEntry.data as List),
+        if (changed) {
+          notifyListeners();
+        }
+        return CachedDataResult<T>(
+          data: parser(List<dynamic>.from(cacheEntry.data as List)),
           fromCache: true,
           cachedAt: cacheEntry.cachedAt,
         );
       }
       rethrow;
+    } finally {
+      if (!_offlineMode && wasOffline) {
+        notifyListeners();
+      }
     }
   }
 
@@ -329,7 +403,11 @@ class AppState extends ChangeNotifier {
     Map<String, dynamic>? body,
   }) async {
     final response = await _postJsonWithAuth(endpoint, body: body);
+    final changed = _offlineMode;
     _offlineMode = false;
+    if (changed) {
+      notifyListeners();
+    }
     return response.data;
   }
 
@@ -349,7 +427,6 @@ class AppState extends ChangeNotifier {
       if (response.sessionCookie != null &&
           response.sessionCookie!.isNotEmpty) {
         _sessionCookie = response.sessionCookie;
-        await _persistAuthState();
       }
       return response;
     } on ApiException catch (error) {
@@ -375,32 +452,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> _persistAuthState() async {
-    if (_sessionCookie != null && _sessionCookie!.isNotEmpty) {
-      await _prefs.setString(_sessionCookieKey, _sessionCookie!);
-    } else {
-      await _prefs.remove(_sessionCookieKey);
-    }
-
-    if (_csrfToken != null && _csrfToken!.isNotEmpty) {
-      await _prefs.setString(_csrfTokenKey, _csrfToken!);
-    } else {
-      await _prefs.remove(_csrfTokenKey);
-    }
-
-    if (_loginId != null && _loginId!.isNotEmpty) {
-      await _prefs.setString(_loginIdKey, _loginId!);
-    } else {
-      await _prefs.remove(_loginIdKey);
-    }
-
-    if (_role != null && _role!.isNotEmpty) {
-      await _prefs.setString(_roleKey, _role!);
-    } else {
-      await _prefs.remove(_roleKey);
-    }
-  }
-
   Future<void> _persistSetupState() async {
     await _prefs.setBool(_setupRequiredKey, _setupRequired);
     await _prefs.setBool(_bootstrapConfiguredKey, _bootstrapConfigured);
@@ -415,11 +466,6 @@ class AppState extends ChangeNotifier {
     _role = null;
     _lastSessionSyncAt = null;
 
-    await _prefs.remove(_sessionCookieKey);
-    await _prefs.remove(_csrfTokenKey);
-    await _prefs.remove(_loginIdKey);
-    await _prefs.remove(_roleKey);
-
     if (!preserveSetupFlags) {
       _setupRequired = false;
       _bootstrapConfigured = false;
@@ -432,11 +478,11 @@ class AppState extends ChangeNotifier {
     _cacheEntryCount = _cacheStore.countAll();
   }
 
-  bool get _hasPersistedSession {
-    return _sessionCookie != null &&
-        _sessionCookie!.isNotEmpty &&
-        _loginId != null &&
-        _loginId!.isNotEmpty;
+  bool _isCacheFresh(CacheEntry? entry, Duration ttl) {
+    if (entry == null) {
+      return false;
+    }
+    return DateTime.now().difference(entry.cachedAt) <= ttl;
   }
 
   String get _cacheScope {

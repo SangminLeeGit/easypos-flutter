@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../models/dashboard_model.dart';
 import '../services/api.dart';
 import '../state/app_state.dart';
+import '../widgets/cache_notice.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/panel.dart';
 
@@ -21,8 +22,7 @@ class _SyncScreenState extends State<SyncScreen> {
   bool _isLoading = true;
   bool _isSubmitting = false;
   String _error = '';
-  String _taskStatus = '';
-  String _taskId = '';
+  SyncTaskStatusData? _task;
   late DateTime _targetDate;
   Timer? _pollingTimer;
   bool _fromCache = false;
@@ -49,12 +49,15 @@ class _SyncScreenState extends State<SyncScreen> {
     });
 
     try {
-      final response = await appState.fetchJson('/api/sync/runs');
+      final response = await appState.fetchMapParsed(
+        '/api/sync/runs',
+        parser: SyncRunsData.fromJson,
+      );
       if (!mounted) {
         return;
       }
       setState(() {
-        _runs = SyncRunsData(response.data);
+        _runs = response.data;
         _fromCache = response.fromCache;
         _cachedAt = response.cachedAt;
         _isLoading = false;
@@ -105,8 +108,18 @@ class _SyncScreenState extends State<SyncScreen> {
       }
 
       setState(() {
-        _taskId = taskId;
-        _taskStatus = (response['status'] ?? '').toString();
+        _task = SyncTaskStatusData(
+          taskId: taskId,
+          targetDate: ApiService.formatDate(_targetDate),
+          status: (response['status'] ?? '').toString(),
+          errorMessage: '',
+          headerCount: 0,
+          itemCount: 0,
+          summaryCount: 0,
+          loadedCount: 0,
+          startedAt: '',
+          finishedAt: '',
+        );
       });
 
       _pollingTimer?.cancel();
@@ -125,24 +138,25 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   Future<void> _pollTask() async {
-    if (_taskId.isEmpty) {
+    final taskId = _task?.taskId ?? '';
+    if (taskId.isEmpty) {
       return;
     }
 
     final appState = context.read<AppState>();
     try {
-      final response = await appState.fetchJson(
-        '/api/sync/$_taskId',
+      final response = await appState.fetchMapParsed(
+        '/api/sync/$taskId',
+        parser: SyncTaskStatusData.fromJson,
         allowStaleOnError: false,
       );
-      final status = SyncTaskStatusData(response.data).status;
       if (!mounted) {
         return;
       }
       setState(() {
-        _taskStatus = status;
+        _task = response.data;
       });
-      if (status == 'done' || status == 'error') {
+      if (_task?.isFinished == true) {
         _pollingTimer?.cancel();
         setState(() {
           _isSubmitting = false;
@@ -178,7 +192,7 @@ class _SyncScreenState extends State<SyncScreen> {
       );
     }
 
-    final runs = _runs?.runs ?? const <Map<String, dynamic>>[];
+    final runs = _runs?.runs ?? const <SyncRun>[];
     return RefreshIndicator(
       onRefresh: _loadRuns,
       child: ListView(
@@ -199,22 +213,7 @@ class _SyncScreenState extends State<SyncScreen> {
           ),
           if (_fromCache && _cachedAt != null) ...[
             const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF7ED),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: const Color(0xFFFED7AA)),
-              ),
-              child: Text(
-                '오프라인 캐시 · ${UiFormat.compactDateTime(_cachedAt?.toIso8601String())}',
-                style: const TextStyle(
-                  color: Color(0xFF9A3412),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
-              ),
-            ),
+            CacheNotice(cachedAt: _cachedAt),
           ],
           const SizedBox(height: 16),
           Panel(
@@ -234,15 +233,9 @@ class _SyncScreenState extends State<SyncScreen> {
                   icon: const Icon(Icons.sync),
                   label: Text(_isSubmitting ? '동기화 중...' : '동기화 시작'),
                 ),
-                if (_taskId.isNotEmpty) ...[
+                if (_task != null) ...[
                   const SizedBox(height: 12),
-                  Text(
-                    'Task $_taskId · 상태 $_taskStatus',
-                    style: const TextStyle(
-                      color: Color(0xFF64748B),
-                      fontSize: 13,
-                    ),
-                  ),
+                  _buildTaskStatus(_task!),
                 ],
                 if (_error.isNotEmpty) ...[
                   const SizedBox(height: 12),
@@ -281,7 +274,7 @@ class _SyncScreenState extends State<SyncScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    run['target_date']?.toString() ?? '-',
+                                    run.targetDate,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w700,
                                       color: Color(0xFF0F172A),
@@ -289,7 +282,7 @@ class _SyncScreenState extends State<SyncScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    "시작 ${UiFormat.compactDateTime(run['started_at']?.toString())} · 완료 ${UiFormat.compactDateTime(run['finished_at']?.toString())}",
+                                    '시작 ${UiFormat.compactDateTime(run.startedAt)} · 완료 ${UiFormat.compactDateTime(run.finishedAt)}',
                                     style: const TextStyle(
                                       fontSize: 12,
                                       color: Color(0xFF64748B),
@@ -303,16 +296,15 @@ class _SyncScreenState extends State<SyncScreen> {
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 Text(
-                                  run['status']?.toString() ?? '-',
+                                  run.status,
                                   style: TextStyle(
                                     fontWeight: FontWeight.w700,
-                                    color:
-                                        _statusColor(run['status']?.toString()),
+                                    color: _statusColor(run.status),
                                   ),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  "${UiFormat.number(run['loaded_count'] as num?)} / ${UiFormat.number(run['source_count'] as num?)}",
+                                  '${UiFormat.number(run.loadedCount)} / ${UiFormat.number(run.sourceCount)}',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     color: Color(0xFF64748B),
@@ -333,14 +325,57 @@ class _SyncScreenState extends State<SyncScreen> {
 
   Color _statusColor(String? status) {
     switch (status) {
-      case 'done':
+      case 'succeeded':
         return const Color(0xFF16A34A);
-      case 'error':
+      case 'failed':
         return const Color(0xFFDC2626);
       case 'running':
+      case 'pending':
         return const Color(0xFFB45309);
       default:
         return const Color(0xFF64748B);
     }
+  }
+
+  Widget _buildTaskStatus(SyncTaskStatusData task) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Task ${task.taskId} · ${task.status}',
+            style: TextStyle(
+              color: _statusColor(task.status),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '헤더 ${UiFormat.number(task.headerCount)} · 품목 ${UiFormat.number(task.itemCount)} · 일자요약 ${UiFormat.number(task.summaryCount)} · 적재 ${UiFormat.number(task.loadedCount)}',
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 13,
+            ),
+          ),
+          if (task.errorMessage.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              task.errorMessage,
+              style: const TextStyle(
+                color: Color(0xFFDC2626),
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

@@ -80,30 +80,77 @@ class MainLayout extends StatefulWidget {
 class _MainLayoutState extends State<MainLayout> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
-    DashboardScreen(),
-    AnalyticsScreen(),
-    SyncScreen(),
-    SettingsScreen(),
-  ];
+  List<_NavigationItem> _buildNavigationItems(AppState appState) {
+    final items = <_NavigationItem>[
+      const _NavigationItem(
+        title: '대시보드',
+        label: '대시보드',
+        icon: Icons.space_dashboard_outlined,
+        selectedIcon: Icons.space_dashboard,
+        screen: DashboardScreen(),
+      ),
+      const _NavigationItem(
+        title: '분석 허브',
+        label: '분석',
+        icon: Icons.analytics_outlined,
+        selectedIcon: Icons.analytics,
+        screen: AnalyticsScreen(),
+      ),
+      const _NavigationItem(
+        title: '동기화',
+        label: '동기화',
+        icon: Icons.sync_outlined,
+        selectedIcon: Icons.sync,
+        screen: SyncScreen(),
+        minimumRole: UserRole.operator,
+      ),
+      const _NavigationItem(
+        title: '설정',
+        label: '설정',
+        icon: Icons.settings_outlined,
+        selectedIcon: Icons.settings,
+        screen: SettingsScreen(),
+      ),
+    ];
 
-  final List<String> _titles = const [
-    '대시보드',
-    '분석 허브',
-    '동기화',
-    '설정',
-  ];
+    return items
+        .where(
+          (item) => item.minimumRole == null ||
+              appState.canAccess(item.minimumRole!),
+        )
+        .toList(growable: false);
+  }
 
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
+    final navigationItems = _buildNavigationItems(appState);
+    final currentIndex = _currentIndex.clamp(0, navigationItems.length - 1);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _titles[_currentIndex],
+          navigationItems[currentIndex].title,
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
+        actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color.fromRGBO(13, 148, 136, 0.1),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              appState.userRole.label,
+              style: const TextStyle(
+                color: Color(0xFF0F766E),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(
@@ -143,15 +190,17 @@ class _MainLayoutState extends State<MainLayout> {
               ),
             Expanded(
               child: IndexedStack(
-                index: _currentIndex,
-                children: _screens,
+                index: currentIndex,
+                children: navigationItems
+                    .map((item) => item.screen)
+                    .toList(growable: false),
               ),
             ),
           ],
         ),
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
+        selectedIndex: currentIndex,
         onDestinationSelected: (index) {
           setState(() {
             _currentIndex = index;
@@ -159,29 +208,34 @@ class _MainLayoutState extends State<MainLayout> {
         },
         backgroundColor: Colors.white,
         indicatorColor: const Color.fromRGBO(13, 148, 136, 0.12),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.space_dashboard_outlined),
-            selectedIcon: Icon(Icons.space_dashboard),
-            label: '대시보드',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.analytics_outlined),
-            selectedIcon: Icon(Icons.analytics),
-            label: '분석',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.sync_outlined),
-            selectedIcon: Icon(Icons.sync),
-            label: '동기화',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: '설정',
-          ),
-        ],
+        destinations: navigationItems
+            .map(
+              (item) => NavigationDestination(
+                icon: Icon(item.icon),
+                selectedIcon: Icon(item.selectedIcon),
+                label: item.label,
+              ),
+            )
+            .toList(growable: false),
       ),
     );
   }
+}
+
+class _NavigationItem {
+  final String title;
+  final String label;
+  final IconData icon;
+  final IconData selectedIcon;
+  final Widget screen;
+  final UserRole? minimumRole;
+
+  const _NavigationItem({
+    required this.title,
+    required this.label,
+    required this.icon,
+    required this.selectedIcon,
+    required this.screen,
+    this.minimumRole,
+  });
 }

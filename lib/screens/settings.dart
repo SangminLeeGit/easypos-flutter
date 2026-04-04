@@ -20,16 +20,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _lastSyncedApiBaseUrl = '';
   bool _isClearingCache = false;
   bool _isLoggingOut = false;
+  late final TextEditingController _currentPasswordController;
+  late final TextEditingController _newPasswordController;
+  late final TextEditingController _confirmPasswordController;
+  bool _isChangingPassword = false;
+  String _passwordMessage = '';
+  bool _passwordOk = false;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController();
+    _currentPasswordController = TextEditingController();
+    _newPasswordController = TextEditingController();
+    _confirmPasswordController = TextEditingController();
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _currentPasswordController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -181,6 +193,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         _buildInfoRow('계정', appState.loginId ?? '-'),
         _buildInfoRow('권한', appState.role ?? '-'),
+        _buildInfoRow(
+          '접근 범위',
+          appState.hasAdminAccess
+              ? 'admin · operator · viewer'
+              : appState.hasOperatorAccess
+                  ? 'operator · viewer'
+                  : 'viewer',
+        ),
         _buildInfoRow('캐시 항목', '${appState.cacheEntryCount}개'),
         const SizedBox(height: 12),
         Row(
@@ -232,6 +252,113 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         ),
+        const SizedBox(height: 32),
+        const Text(
+          '비밀번호 변경',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF64748B),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _currentPasswordController,
+          decoration: const InputDecoration(
+            labelText: '현재 비밀번호',
+            border: OutlineInputBorder(),
+          ),
+          obscureText: true,
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _newPasswordController,
+          decoration: const InputDecoration(
+            labelText: '새 비밀번호',
+            helperText: '최소 12자 이상',
+            border: OutlineInputBorder(),
+          ),
+          obscureText: true,
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _confirmPasswordController,
+          decoration: const InputDecoration(
+            labelText: '새 비밀번호 확인',
+            border: OutlineInputBorder(),
+          ),
+          obscureText: true,
+        ),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          onPressed: _isChangingPassword || !appState.isAuthenticated
+              ? null
+              : () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  if (_newPasswordController.text !=
+                      _confirmPasswordController.text) {
+                    setState(() {
+                      _passwordOk = false;
+                      _passwordMessage = '새 비밀번호가 일치하지 않습니다.';
+                    });
+                    return;
+                  }
+
+                  setState(() {
+                    _isChangingPassword = true;
+                    _passwordMessage = '';
+                  });
+
+                  try {
+                    await appState.changePassword(
+                      currentPassword: _currentPasswordController.text,
+                      newPassword: _newPasswordController.text,
+                    );
+                    if (!mounted) {
+                      return;
+                    }
+                    setState(() {
+                      _passwordOk = true;
+                      _passwordMessage = '비밀번호가 변경되었습니다. 다시 로그인해 주세요.';
+                      _currentPasswordController.clear();
+                      _newPasswordController.clear();
+                      _confirmPasswordController.clear();
+                    });
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('비밀번호가 변경되어 세션이 종료되었습니다.'),
+                      ),
+                    );
+                  } catch (error) {
+                    if (!mounted) {
+                      return;
+                    }
+                    setState(() {
+                      _passwordOk = false;
+                      _passwordMessage = error.toString();
+                    });
+                  } finally {
+                    if (mounted) {
+                      setState(() {
+                        _isChangingPassword = false;
+                      });
+                    }
+                  }
+                },
+          icon: const Icon(Icons.key_outlined),
+          label: Text(_isChangingPassword ? '변경 중...' : '비밀번호 변경'),
+        ),
+        if (_passwordMessage.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            _passwordMessage,
+            style: TextStyle(
+              color:
+                  _passwordOk ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
         const SizedBox(height: 32),
         const Text(
           '실행 정보',
