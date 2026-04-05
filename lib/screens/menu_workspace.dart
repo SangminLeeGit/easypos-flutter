@@ -8,14 +8,89 @@ import '../widgets/empty_state.dart';
 import '../widgets/panel.dart';
 import '../widgets/stat_card.dart';
 
-class MenuWorkspaceScreen extends StatefulWidget {
+// ─── Models for product browser ──────────────────────────────────────────────
+
+class _ProductRow {
+  final String itemCode;
+  final String itemName;
+  final int? salePrice;
+  final String category;
+
+  const _ProductRow({
+    required this.itemCode,
+    required this.itemName,
+    this.salePrice,
+    this.category = '',
+  });
+
+  factory _ProductRow.fromRegistration(Map<String, dynamic> j) => _ProductRow(
+        itemCode: (j['상품코드'] ?? j['item_code'] ?? '').toString(),
+        itemName: (j['상품명'] ?? j['item_name'] ?? '').toString(),
+        salePrice: _parseInt(j['판매가'] ?? j['target_price'] ?? j['sale_price']),
+        category: [
+          (j['대분류명'] ?? j['major_category'] ?? '').toString(),
+          (j['중분류명'] ?? j['middle_category'] ?? '').toString(),
+        ].where((s) => s.isNotEmpty).join(' > '),
+      );
+
+  factory _ProductRow.fromSuggestion(Map<String, dynamic> j) => _ProductRow(
+        itemCode: (j['item_code'] ?? '').toString(),
+        itemName: (j['item_name'] ?? '').toString(),
+        salePrice: _parseInt(j['avg_price']),
+        category: '',
+      );
+
+  static int? _parseInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    return int.tryParse(v.toString().replaceAll(',', ''));
+  }
+}
+
+// ─── Main screen ─────────────────────────────────────────────────────────────
+
+class MenuWorkspaceScreen extends StatelessWidget {
   const MenuWorkspaceScreen({super.key});
 
   @override
-  State<MenuWorkspaceScreen> createState() => _MenuWorkspaceScreenState();
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          const TabBar(
+            tabs: [
+              Tab(text: '작업 목록'),
+              Tab(text: '메뉴 선택'),
+            ],
+            labelColor: Color(0xFF0D9488),
+            unselectedLabelColor: Color(0xFF64748B),
+            indicatorColor: Color(0xFF0D9488),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _WorkspaceTab(),
+                _ProductBrowserTab(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _MenuWorkspaceScreenState extends State<MenuWorkspaceScreen> {
+// ─── Tab 1: Workspace entries ─────────────────────────────────────────────────
+
+class _WorkspaceTab extends StatefulWidget {
+  @override
+  State<_WorkspaceTab> createState() => _WorkspaceTabState();
+}
+
+class _WorkspaceTabState extends State<_WorkspaceTab>
+    with AutomaticKeepAliveClientMixin {
   WorkspaceSnapshot? _snapshot;
   bool _isLoading = true;
   String _error = '';
@@ -24,6 +99,9 @@ class _MenuWorkspaceScreenState extends State<MenuWorkspaceScreen> {
   String _filterStatus = 'all';
   String _filterKind = 'all';
   String _searchQuery = '';
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -80,6 +158,8 @@ class _MenuWorkspaceScreenState extends State<MenuWorkspaceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+
     if (_isLoading) return const Center(child: CircularProgressIndicator());
     if (_error.isNotEmpty) {
       return EmptyState(
@@ -102,105 +182,86 @@ class _MenuWorkspaceScreenState extends State<MenuWorkspaceScreen> {
     final appState = context.watch<AppState>();
     final hasReady = (snapshot.statusCounts['ready'] ?? 0) > 0;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      floatingActionButton: appState.hasOperatorAccess
-          ? FloatingActionButton.extended(
-              onPressed: () => _showPriceChangeSheet(context),
-              icon: const Icon(Icons.add),
-              label: const Text('가격변경 등록'),
-              backgroundColor: const Color(0xFF0D9488),
-              foregroundColor: Colors.white,
-            )
-          : null,
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              sliver: SliverToBoxAdapter(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (_fromCache && _cachedAt != null) ...[  
-                      CacheNotice(cachedAt: _cachedAt),
-                      const SizedBox(height: 12),
-                    ],
-                    _MetricGrid(
-                      cards: [
-                        StatCard(
-                          label: '전체 항목',
-                          value: '${s.totalEntries}개',
-                          accent: true,
-                        ),
-                        StatCard(
-                          label: '적용 준비',
-                          value: '${s.readyCount}개',
-                        ),
-                        StatCard(
-                          label: '신규 등록',
-                          value: '${s.newItemCount}개',
-                        ),
-                        StatCard(
-                          label: '가격 변동 합계',
-                          value: _wonSigned(s.priceDeltaTotal),
-                        ),
-                      ],
-                    ),
-                    if (hasReady && appState.hasOperatorAccess) ...[  
-                      const SizedBox(height: 12),
-                      _ApplyReadyBanner(onApplied: _load),
-                    ],
-                    const SizedBox(height: 16),
-                    _FilterBar(
-                      filterStatus: _filterStatus,
-                      filterKind: _filterKind,
-                      onStatusChanged: (v) => setState(() => _filterStatus = v),
-                      onKindChanged: (v) => setState(() => _filterKind = v),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      decoration: const InputDecoration(
-                        hintText: '품목명 또는 코드 검색',
-                        prefixIcon: Icon(Icons.search),
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      ),
-                      onChanged: (v) => setState(() => _searchQuery = v),
-                    ),
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_fromCache && _cachedAt != null) ...[
+                    CacheNotice(cachedAt: _cachedAt),
                     const SizedBox(height: 12),
                   ],
-                ),
+                  _MetricGrid(
+                    cards: [
+                      StatCard(
+                          label: '전체 항목',
+                          value: '${s.totalEntries}개',
+                          accent: true),
+                      StatCard(label: '적용 준비', value: '${s.readyCount}개'),
+                      StatCard(label: '신규 등록', value: '${s.newItemCount}개'),
+                      StatCard(
+                          label: '가격 변동',
+                          value: _wonSigned(s.priceDeltaTotal)),
+                    ],
+                  ),
+                  if (hasReady && appState.hasOperatorAccess) ...[
+                    const SizedBox(height: 12),
+                    _ApplyReadyBanner(onApplied: _load),
+                  ],
+                  const SizedBox(height: 16),
+                  _FilterBar(
+                    filterStatus: _filterStatus,
+                    filterKind: _filterKind,
+                    onStatusChanged: (v) => setState(() => _filterStatus = v),
+                    onKindChanged: (v) => setState(() => _filterKind = v),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    decoration: const InputDecoration(
+                      hintText: '품목명 또는 코드 검색',
+                      prefixIcon: Icon(Icons.search),
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    onChanged: (v) => setState(() => _searchQuery = v),
+                  ),
+                  const SizedBox(height: 12),
+                ],
               ),
             ),
-            if (entries.isEmpty)
-              const SliverFillRemaining(
-                child: Center(
-                  child: Text(
-                    '조건에 맞는 항목이 없습니다.',
-                    style: TextStyle(color: Color(0xFF64748B)),
-                  ),
-                ),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-                sliver: SliverList.separated(
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemCount: entries.length,
-                  itemBuilder: (context, index) {
-                    return _MenuEntryCard(
-                      entry: entries[index],
-                      onTap: () => _showEntryDetail(context, entries[index]),
-                    );
-                  },
+          ),
+          if (entries.isEmpty)
+            const SliverFillRemaining(
+              child: Center(
+                child: Text(
+                  '조건에 맞는 항목이 없습니다.',
+                  style: TextStyle(color: Color(0xFF64748B)),
                 ),
               ),
-          ],
-        ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              sliver: SliverList.separated(
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemCount: entries.length,
+                itemBuilder: (context, index) {
+                  return _MenuEntryCard(
+                    entry: entries[index],
+                    onTap: () => _showEntryDetail(context, entries[index]),
+                  );
+                },
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -208,186 +269,515 @@ class _MenuWorkspaceScreenState extends State<MenuWorkspaceScreen> {
   void _showEntryDetail(BuildContext context, MenuEntry entry) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => MenuEntryDetailScreen(entry: entry, onUpdated: _load),
+        builder: (_) =>
+            MenuEntryDetailScreen(entry: entry, onUpdated: _load),
       ),
     );
   }
+}
 
-  void _showPriceChangeSheet(BuildContext context) {
+// ─── Tab 2: Product Browser ───────────────────────────────────────────────────
+
+class _ProductBrowserTab extends StatefulWidget {
+  @override
+  State<_ProductBrowserTab> createState() => _ProductBrowserTabState();
+}
+
+class _ProductBrowserTabState extends State<_ProductBrowserTab>
+    with AutomaticKeepAliveClientMixin {
+  List<_ProductRow> _suggestions = [];
+  bool _suggestionsLoading = true;
+  String _suggestionsError = '';
+
+  List<_ProductRow> _searchResults = [];
+  bool _searchLoading = false;
+  String _searchError = '';
+  bool _hasSearched = false;
+
+  final _searchController = TextEditingController();
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSuggestions();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSuggestions() async {
     final appState = context.read<AppState>();
+    setState(() {
+      _suggestionsLoading = true;
+      _suggestionsError = '';
+    });
+    try {
+      final result = await appState.fetchMapParsed<Map<String, dynamic>>(
+        '/api/menu-workspace/suggestions',
+        parser: (j) => j,
+        cacheTtl: const Duration(minutes: 15),
+      );
+      if (!mounted) return;
+      final list = (result.data['suggestions'] as List? ?? [])
+          .map((e) =>
+              _ProductRow.fromSuggestion(e as Map<String, dynamic>))
+          .toList();
+      setState(() {
+        _suggestions = list;
+        _suggestionsLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _suggestionsError = e.toString();
+        _suggestionsLoading = false;
+      });
+    }
+  }
+
+  Future<void> _search(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _hasSearched = false;
+        _searchError = '';
+      });
+      return;
+    }
+    final appState = context.read<AppState>();
+    setState(() {
+      _searchLoading = true;
+      _searchError = '';
+      _hasSearched = true;
+    });
+    try {
+      final result = await appState.fetchMapParsed<Map<String, dynamic>>(
+        '/api/menu-workspace/product-registration',
+        params: {'query': q, 'refresh': 'false', 'limit': '100'},
+        parser: (j) => j,
+        cacheTtl: const Duration(minutes: 10),
+      );
+      if (!mounted) return;
+      final rows = (result.data['rows'] as List? ?? [])
+          .map((e) =>
+              _ProductRow.fromRegistration(e as Map<String, dynamic>))
+          .toList();
+      setState(() {
+        _searchResults = rows;
+        _searchLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _searchError = e.toString();
+        _searchLoading = false;
+      });
+    }
+  }
+
+  void _openPriceChangeSheet(_ProductRow product) {
+    final appState = context.read<AppState>();
+    if (!appState.hasOperatorAccess) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _PriceChangeCreateSheet(
+      builder: (_) => _QuickPriceChangeSheet(
+        product: product,
         appState: appState,
         onCreated: () {
           Navigator.of(context).pop();
-          _load();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(
+                    '${product.itemName} 가격변경 항목이 등록되었습니다.')),
+          );
         },
       ),
     );
   }
-}
-
-class _FilterBar extends StatelessWidget {
-  final String filterStatus;
-  final String filterKind;
-  final ValueChanged<String> onStatusChanged;
-  final ValueChanged<String> onKindChanged;
-
-  const _FilterBar({
-    required this.filterStatus,
-    required this.filterKind,
-    required this.onStatusChanged,
-    required this.onKindChanged,
-  });
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          _FilterChip(label: '전체', value: 'all', groupValue: filterStatus, onSelected: onStatusChanged),
-          const SizedBox(width: 6),
-          _FilterChip(label: '작성중', value: 'draft', groupValue: filterStatus, onSelected: onStatusChanged),
-          const SizedBox(width: 6),
-          _FilterChip(label: '검토됨', value: 'reviewed', groupValue: filterStatus, onSelected: onStatusChanged),
-          const SizedBox(width: 6),
-          _FilterChip(label: '준비완료', value: 'ready', groupValue: filterStatus, onSelected: onStatusChanged),
-          const SizedBox(width: 6),
-          _FilterChip(label: '완료', value: 'done', groupValue: filterStatus, onSelected: onStatusChanged),
-          const SizedBox(width: 16),
-          _FilterChip(label: '전체 종류', value: 'all', groupValue: filterKind, onSelected: onKindChanged),
-          const SizedBox(width: 6),
-          _FilterChip(label: '가격변경', value: 'price_update', groupValue: filterKind, onSelected: onKindChanged),
-          const SizedBox(width: 6),
-          _FilterChip(label: '신규등록', value: 'new_item', groupValue: filterKind, onSelected: onKindChanged),
-        ],
-      ),
+    super.build(context);
+    final appState = context.watch<AppState>();
+    final isOperator = appState.hasOperatorAccess;
+    final showSearch = _hasSearched;
+    final list = showSearch ? _searchResults : _suggestions;
+    final isLoading =
+        showSearch ? _searchLoading : _suggestionsLoading;
+    final error = showSearch ? _searchError : _suggestionsError;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'POS 상품명 또는 코드 검색',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        _search('');
+                      },
+                    )
+                  : null,
+              isDense: true,
+              border: const OutlineInputBorder(),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            textInputAction: TextInputAction.search,
+            onSubmitted: _search,
+            onChanged: (v) {
+              setState(() {});
+              if (v.isEmpty) _search('');
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Row(
+            children: [
+              Text(
+                showSearch ? 'POS 상품 검색 결과' : '매출 상위 메뉴',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+              const Spacer(),
+              if (!showSearch)
+                TextButton.icon(
+                  onPressed: _loadSuggestions,
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('새로고침',
+                      style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF64748B),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : error.isNotEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(error,
+                            style: const TextStyle(
+                                color: Color(0xFFDC2626))),
+                      ),
+                    )
+                  : list.isEmpty
+                      ? Center(
+                          child: Text(
+                            showSearch
+                                ? '검색 결과가 없습니다.'
+                                : '매출 데이터가 없습니다.',
+                            style: const TextStyle(
+                                color: Color(0xFF64748B)),
+                          ),
+                        )
+                      : ListView.separated(
+                          padding:
+                              const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                          itemCount: list.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 6),
+                          itemBuilder: (_, i) => _ProductCard(
+                            product: list[i],
+                            onTap: isOperator
+                                ? () => _openPriceChangeSheet(list[i])
+                                : null,
+                            rank: !showSearch ? i + 1 : null,
+                          ),
+                        ),
+        ),
+        if (!isOperator)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+                horizontal: 16, vertical: 10),
+            color: const Color(0xFFFFF7ED),
+            child: const Text(
+              'operator 이상 권한이 있어야 가격변경을 등록할 수 있습니다.',
+              style:
+                  TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+            ),
+          ),
+      ],
     );
   }
 }
 
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final String value;
-  final String groupValue;
-  final ValueChanged<String> onSelected;
+// ─── Product Card ─────────────────────────────────────────────────────────────
 
-  const _FilterChip({
-    required this.label,
-    required this.value,
-    required this.groupValue,
-    required this.onSelected,
+class _ProductCard extends StatelessWidget {
+  final _ProductRow product;
+  final VoidCallback? onTap;
+  final int? rank;
+
+  const _ProductCard({
+    required this.product,
+    this.onTap,
+    this.rank,
   });
 
   @override
   Widget build(BuildContext context) {
-    final selected = value == groupValue;
-    return FilterChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onSelected(value),
-      selectedColor: const Color.fromRGBO(13, 148, 136, 0.15),
-      checkmarkColor: const Color(0xFF0D9488),
-    );
-  }
-}
-
-class _MenuEntryCard extends StatelessWidget {
-  final MenuEntry entry;
-  final VoidCallback onTap;
-
-  const _MenuEntryCard({required this.entry, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final e = entry;
     return Card(
       margin: EdgeInsets.zero,
       child: ListTile(
         onTap: onTap,
-        leading: _StatusBadge(status: e.status),
-        title: Row(
-          children: [
-            Expanded(child: Text(e.itemName, style: const TextStyle(fontWeight: FontWeight.w700))),
-            _KindBadge(kind: e.kind),
-          ],
+        leading: rank != null
+            ? CircleAvatar(
+                radius: 16,
+                backgroundColor: rank! <= 3
+                    ? const Color.fromRGBO(13, 148, 136, 0.15)
+                    : const Color(0xFFF1F5F9),
+                child: Text(
+                  '$rank',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: rank! <= 3
+                        ? const Color(0xFF0F766E)
+                        : const Color(0xFF64748B),
+                  ),
+                ),
+              )
+            : const Icon(Icons.inventory_2_outlined,
+                size: 20, color: Color(0xFF94A3B8)),
+        title: Text(
+          product.itemName,
+          style: const TextStyle(
+              fontWeight: FontWeight.w600, fontSize: 14),
         ),
         subtitle: Text(
-          e.itemCode.isEmpty ? e.categoryHint : '${e.itemCode}${e.categoryHint.isNotEmpty ? ' · ${e.categoryHint}' : ''}',
+          [
+            if (product.itemCode.isNotEmpty) product.itemCode,
+            if (product.category.isNotEmpty) product.category,
+          ].join(' · '),
+          style: const TextStyle(fontSize: 12),
         ),
-        trailing: e.kind == 'price_update' && e.targetPrice != null
+        trailing: product.salePrice != null
             ? Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '→ ${_won(e.targetPrice!)}원',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                    '${_won(product.salePrice!)}원',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
+                    ),
                   ),
-                  if (e.currentPrice != null)
-                    Text(
-                      _wonSigned(e.priceDelta),
+                  if (onTap != null)
+                    const Text(
+                      '탭하여 변경',
                       style: TextStyle(
-                        fontSize: 11,
-                        color: e.priceDelta >= 0 ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
-                      ),
+                          fontSize: 10, color: Color(0xFF0D9488)),
                     ),
                 ],
               )
-            : null,
+            : onTap != null
+                ? const Text('탭하여 변경',
+                    style: TextStyle(
+                        fontSize: 11, color: Color(0xFF0D9488)))
+                : null,
       ),
     );
   }
 }
 
-class _StatusBadge extends StatelessWidget {
-  final String status;
-  const _StatusBadge({required this.status});
+// ─── Quick Price Change Sheet ─────────────────────────────────────────────────
+
+class _QuickPriceChangeSheet extends StatefulWidget {
+  final _ProductRow product;
+  final AppState appState;
+  final VoidCallback onCreated;
+
+  const _QuickPriceChangeSheet({
+    required this.product,
+    required this.appState,
+    required this.onCreated,
+  });
 
   @override
-  Widget build(BuildContext context) {
-    final (color, label) = switch (status) {
-      'draft'    => (const Color(0xFF64748B), '작성'),
-      'reviewed' => (const Color(0xFF2563EB), '검토'),
-      'ready'    => (const Color(0xFF0D9488), '준비'),
-      'done'     => (const Color(0xFF16A34A), '완료'),
-      _          => (const Color(0xFF94A3B8), status),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
-      ),
-    );
-  }
+  State<_QuickPriceChangeSheet> createState() =>
+      _QuickPriceChangeSheetState();
 }
 
-class _KindBadge extends StatelessWidget {
-  final String kind;
-  const _KindBadge({required this.kind});
+class _QuickPriceChangeSheetState
+    extends State<_QuickPriceChangeSheet> {
+  final _targetController = TextEditingController();
+  final _notesController = TextEditingController();
+  bool _isSubmitting = false;
+  String _error = '';
+
+  @override
+  void dispose() {
+    _targetController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final targetText =
+        _targetController.text.replaceAll(',', '');
+    final targetPrice = int.tryParse(targetText);
+
+    if (targetPrice == null || targetPrice < 0) {
+      setState(() => _error = '변경할 가격을 올바르게 입력하세요.');
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _error = '';
+    });
+
+    try {
+      final body = <String, dynamic>{
+        'item_name': widget.product.itemName,
+        'target_price': targetPrice,
+      };
+      if (widget.product.itemCode.isNotEmpty) {
+        body['item_code'] = widget.product.itemCode;
+      }
+      if (widget.product.salePrice != null) {
+        body['current_price'] = widget.product.salePrice;
+      }
+      final notes = _notesController.text.trim();
+      if (notes.isNotEmpty) body['notes'] = notes;
+
+      await widget.appState
+          .postJson('/api/menu-workspace/price-change', body: body);
+      if (!mounted) return;
+      widget.onCreated();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _isSubmitting = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final label = switch (kind) {
-      'price_update' => '가격',
-      'new_item'     => '신규',
-      _              => kind,
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(4),
+    final p = widget.product;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          16,
+          20,
+          16,
+          MediaQuery.of(context).viewInsets.bottom + 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.price_change_outlined,
+                  color: Color(0xFF0D9488), size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      p.itemName,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16),
+                    ),
+                    if (p.itemCode.isNotEmpty)
+                      Text(p.itemCode,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B))),
+                  ],
+                ),
+              ),
+              if (p.salePrice != null)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text('현재가',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF64748B))),
+                    Text(
+                      '${_won(p.salePrice!)}원',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 18,
+                          color: Color(0xFF0F172A)),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Divider(),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _targetController,
+            keyboardType: TextInputType.number,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: '변경할 가격 *',
+              suffixText: '원',
+              border: const OutlineInputBorder(),
+              hintText:
+                  p.salePrice != null ? '현재 ${_won(p.salePrice!)}원' : null,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _notesController,
+            decoration: const InputDecoration(
+              labelText: '메모 (선택)',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          if (_error.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(_error,
+                style: const TextStyle(
+                    color: Color(0xFFDC2626), fontSize: 13)),
+          ],
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: _isSubmitting ? null : _submit,
+            icon: const Icon(Icons.check),
+            label: Text(
+                _isSubmitting ? '등록 중...' : '가격변경 항목 등록'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF0D9488),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+          ),
+        ],
       ),
-      child: Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
     );
   }
 }
@@ -398,7 +788,8 @@ class MenuEntryDetailScreen extends StatelessWidget {
   final MenuEntry entry;
   final VoidCallback? onUpdated;
 
-  const MenuEntryDetailScreen({super.key, required this.entry, this.onUpdated});
+  const MenuEntryDetailScreen(
+      {super.key, required this.entry, this.onUpdated});
 
   @override
   Widget build(BuildContext context) {
@@ -411,7 +802,8 @@ class MenuEntryDetailScreen extends StatelessWidget {
         title: Text(e.itemName),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: const Color(0xFFE2E8F0)),
+          child: Container(
+              height: 1, color: const Color(0xFFE2E8F0)),
         ),
         actions: [
           if (canEdit)
@@ -430,11 +822,22 @@ class MenuEntryDetailScreen extends StatelessWidget {
               child: Column(
                 children: [
                   _InfoRow(label: '품목명', value: e.itemName),
-                  _InfoRow(label: '품목코드', value: e.itemCode.isEmpty ? '-' : e.itemCode),
-                  _InfoRow(label: '분류', value: e.categoryHint.isEmpty ? '-' : e.categoryHint),
-                  _InfoRow(label: '상태', value: _statusLabel(e.status)),
-                  _InfoRow(label: '종류', value: _kindLabel(e.kind)),
-                  _InfoRow(label: '출처', value: e.source.isEmpty ? '-' : e.source),
+                  _InfoRow(
+                      label: '품목코드',
+                      value: e.itemCode.isEmpty ? '-' : e.itemCode),
+                  _InfoRow(
+                      label: '분류',
+                      value: e.categoryHint.isEmpty
+                          ? '-'
+                          : e.categoryHint),
+                  _InfoRow(
+                      label: '상태',
+                      value: _statusLabel(e.status)),
+                  _InfoRow(
+                      label: '종류', value: _kindLabel(e.kind)),
+                  _InfoRow(
+                      label: '출처',
+                      value: e.source.isEmpty ? '-' : e.source),
                 ],
               ),
             ),
@@ -446,15 +849,21 @@ class MenuEntryDetailScreen extends StatelessWidget {
                   children: [
                     _InfoRow(
                       label: '현재 가격',
-                      value: e.currentPrice == null ? '-' : '${_won(e.currentPrice!)}원',
+                      value: e.currentPrice == null
+                          ? '-'
+                          : '${_won(e.currentPrice!)}원',
                     ),
                     _InfoRow(
                       label: '목표 가격',
-                      value: e.targetPrice == null ? '-' : '${_won(e.targetPrice!)}원',
+                      value: e.targetPrice == null
+                          ? '-'
+                          : '${_won(e.targetPrice!)}원',
                     ),
                     _InfoRow(
                       label: '변동',
-                      value: e.targetPrice == null ? '-' : '${_wonSigned(e.priceDelta)}원',
+                      value: e.targetPrice == null
+                          ? '-'
+                          : '${_wonSigned(e.priceDelta)}원',
                     ),
                   ],
                 ),
@@ -487,6 +896,8 @@ class MenuEntryDetailScreen extends StatelessWidget {
     );
   }
 }
+
+// ─── Status Update Sheet ──────────────────────────────────────────────────────
 
 class _StatusUpdateSheet extends StatefulWidget {
   final MenuEntry entry;
@@ -527,7 +938,8 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
 
   Future<void> _submit() async {
     if (_selectedStatus == widget.entry.status &&
-        (_newTargetPrice == null || _newTargetPrice == widget.entry.targetPrice)) {
+        (_newTargetPrice == null ||
+            _newTargetPrice == widget.entry.targetPrice)) {
       Navigator.of(context).pop();
       return;
     }
@@ -560,19 +972,25 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
     const labels = ['작성중', '검토됨', '준비완료', '완료'];
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+      padding: EdgeInsets.fromLTRB(
+          16,
+          20,
+          16,
+          MediaQuery.of(context).viewInsets.bottom + 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            '상태 변경: ${widget.entry.itemName}',
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            '편집: ${widget.entry.itemName}',
+            style: const TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 16),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           RadioGroup<String>(
             groupValue: _selectedStatus,
-            onChanged: (v) => setState(() => _selectedStatus = v!),
+            onChanged: (v) =>
+                setState(() => _selectedStatus = v ?? _selectedStatus),
             child: Column(
               children: List.generate(statuses.length, (i) {
                 return RadioListTile<String>(
@@ -584,8 +1002,8 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
               }),
             ),
           ),
-          if (widget.entry.kind == 'price_update') ...[  
-            const SizedBox(height: 12),
+          if (widget.entry.kind == 'price_update') ...[
+            const SizedBox(height: 8),
             TextField(
               controller: _targetPriceController,
               keyboardType: TextInputType.number,
@@ -595,14 +1013,17 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
                 isDense: true,
               ),
               onChanged: (v) {
-                final parsed = int.tryParse(v.replaceAll(',', ''));
+                final parsed =
+                    int.tryParse(v.replaceAll(',', ''));
                 setState(() => _newTargetPrice = parsed);
               },
             ),
           ],
           if (_error.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text(_error, style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13)),
+            Text(_error,
+                style: const TextStyle(
+                    color: Color(0xFFDC2626), fontSize: 13)),
           ],
           const SizedBox(height: 12),
           FilledButton(
@@ -615,82 +1036,212 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
   }
 }
 
-// ─── Shared helpers ───────────────────────────────────────────────────────────
+// ─── Filter Bar ───────────────────────────────────────────────────────────────
 
-class _InfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _InfoRow({required this.label, required this.value});
+class _FilterBar extends StatelessWidget {
+  final String filterStatus;
+  final String filterKind;
+  final ValueChanged<String> onStatusChanged;
+  final ValueChanged<String> onKindChanged;
+
+  const _FilterBar({
+    required this.filterStatus,
+    required this.filterKind,
+    required this.onStatusChanged,
+    required this.onKindChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 80,
-            child: Text(label, style: const TextStyle(color: Color(0xFF64748B))),
-          ),
-          Expanded(
-            child: Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
-          ),
+          _FilterChipWidget(
+              label: '전체',
+              value: 'all',
+              groupValue: filterStatus,
+              onSelected: onStatusChanged),
+          const SizedBox(width: 6),
+          _FilterChipWidget(
+              label: '작성중',
+              value: 'draft',
+              groupValue: filterStatus,
+              onSelected: onStatusChanged),
+          const SizedBox(width: 6),
+          _FilterChipWidget(
+              label: '검토됨',
+              value: 'reviewed',
+              groupValue: filterStatus,
+              onSelected: onStatusChanged),
+          const SizedBox(width: 6),
+          _FilterChipWidget(
+              label: '준비완료',
+              value: 'ready',
+              groupValue: filterStatus,
+              onSelected: onStatusChanged),
+          const SizedBox(width: 6),
+          _FilterChipWidget(
+              label: '완료',
+              value: 'done',
+              groupValue: filterStatus,
+              onSelected: onStatusChanged),
+          const SizedBox(width: 16),
+          _FilterChipWidget(
+              label: '전체 종류',
+              value: 'all',
+              groupValue: filterKind,
+              onSelected: onKindChanged),
+          const SizedBox(width: 6),
+          _FilterChipWidget(
+              label: '가격변경',
+              value: 'price_update',
+              groupValue: filterKind,
+              onSelected: onKindChanged),
+          const SizedBox(width: 6),
+          _FilterChipWidget(
+              label: '신규등록',
+              value: 'new_item',
+              groupValue: filterKind,
+              onSelected: onKindChanged),
         ],
       ),
     );
   }
 }
 
-class _MetricGrid extends StatelessWidget {
-  final List<Widget> cards;
-  const _MetricGrid({required this.cards});
+class _FilterChipWidget extends StatelessWidget {
+  final String label;
+  final String value;
+  final String groupValue;
+  final ValueChanged<String> onSelected;
+
+  const _FilterChipWidget({
+    required this.label,
+    required this.value,
+    required this.groupValue,
+    required this.onSelected,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth >= 720
-            ? (constraints.maxWidth - 12) / 2
-            : constraints.maxWidth;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: cards.map((c) => SizedBox(width: width, child: c)).toList(growable: false),
-        );
-      },
+    final selected = value == groupValue;
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onSelected(value),
+      selectedColor: const Color.fromRGBO(13, 148, 136, 0.15),
+      checkmarkColor: const Color(0xFF0D9488),
     );
   }
 }
 
-String _statusLabel(String s) => switch (s) {
-      'draft'    => '작성중',
-      'reviewed' => '검토됨',
-      'ready'    => '준비완료',
-      'done'     => '완료',
-      _          => s,
-    };
+// ─── Workspace Entry Cards ────────────────────────────────────────────────────
 
-String _kindLabel(String k) => switch (k) {
-      'price_update' => '가격 변경',
-      'new_item'     => '신규 등록',
-      _              => k,
-    };
+class _MenuEntryCard extends StatelessWidget {
+  final MenuEntry entry;
+  final VoidCallback onTap;
 
-String _won(num value) {
-  final abs = value.abs().round();
-  final str = abs.toString();
-  final buffer = StringBuffer();
-  for (int i = 0; i < str.length; i++) {
-    if (i > 0 && (str.length - i) % 3 == 0) buffer.write(',');
-    buffer.write(str[i]);
+  const _MenuEntryCard({required this.entry, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final e = entry;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        onTap: onTap,
+        leading: _StatusBadge(status: e.status),
+        title: Row(
+          children: [
+            Expanded(
+                child: Text(e.itemName,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700))),
+            _KindBadge(kind: e.kind),
+          ],
+        ),
+        subtitle: Text(
+          e.itemCode.isEmpty
+              ? e.categoryHint
+              : '${e.itemCode}${e.categoryHint.isNotEmpty ? ' · ${e.categoryHint}' : ''}',
+        ),
+        trailing: e.kind == 'price_update' && e.targetPrice != null
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('→ ${_won(e.targetPrice!)}원',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700)),
+                  if (e.currentPrice != null)
+                    Text(
+                      _wonSigned(e.priceDelta),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: e.priceDelta >= 0
+                            ? const Color(0xFF16A34A)
+                            : const Color(0xFFDC2626),
+                      ),
+                    ),
+                ],
+              )
+            : null,
+      ),
+    );
   }
-  return value < 0 ? '-${buffer.toString()}' : buffer.toString();
 }
 
-String _wonSigned(int value) {
-  final sign = value >= 0 ? '+' : '';
-  return '$sign${_won(value)}';
+class _StatusBadge extends StatelessWidget {
+  final String status;
+  const _StatusBadge({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, label) = switch (status) {
+      'draft' => (const Color(0xFF64748B), '작성'),
+      'reviewed' => (const Color(0xFF2563EB), '검토'),
+      'ready' => (const Color(0xFF0D9488), '준비'),
+      'done' => (const Color(0xFF16A34A), '완료'),
+      _ => (const Color(0xFF94A3B8), status),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: color)),
+    );
+  }
+}
+
+class _KindBadge extends StatelessWidget {
+  final String kind;
+  const _KindBadge({required this.kind});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (kind) {
+      'price_update' => '가격',
+      'new_item' => '신규',
+      _ => kind,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(label,
+          style: const TextStyle(
+              fontSize: 11, color: Color(0xFF64748B))),
+    );
+  }
 }
 
 // ─── Apply-Ready Banner ───────────────────────────────────────────────────────
@@ -709,16 +1260,20 @@ class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
   Future<void> _apply({required bool execute}) async {
     final appState = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
-
     setState(() => _isApplying = true);
     try {
       final result = await appState.postJson(
         '/api/menu-workspace/apply-ready',
-        body: {'execute': execute, 'reason': execute ? 'mobile-apply' : ''},
+        body: {
+          'execute': execute,
+          'reason': execute ? 'mobile-apply' : ''
+        },
       );
       if (!mounted) return;
-      final applied = result['applied_count'] ?? result['count'] ?? '?';
-      final skipped = result['skipped_count'] ?? result['skipped'] ?? 0;
+      final applied =
+          result['applied_count'] ?? result['count'] ?? '?';
+      final skipped =
+          result['skipped_count'] ?? result['skipped'] ?? 0;
       messenger.showSnackBar(SnackBar(
         content: Text(execute
             ? '$applied건 가격 적용 완료${skipped > 0 ? ', $skipped건 건너뜀' : ''}'
@@ -727,7 +1282,8 @@ class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
       if (execute) widget.onApplied();
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('오류: $e')));
+      messenger
+          .showSnackBar(SnackBar(content: Text('오류: $e')));
     } finally {
       if (mounted) setState(() => _isApplying = false);
     }
@@ -744,43 +1300,54 @@ class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.rocket_launch_outlined, color: Color(0xFF0D9488), size: 20),
+          const Icon(Icons.rocket_launch_outlined,
+              color: Color(0xFF0D9488), size: 20),
           const SizedBox(width: 8),
           const Expanded(
-            child: Text(
-              '준비완료 항목이 있습니다.',
-              style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-            ),
+            child: Text('준비완료 항목이 있습니다.',
+                style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF0F172A))),
           ),
           OutlinedButton(
-            onPressed: _isApplying ? null : () => _apply(execute: false),
+            onPressed:
+                _isApplying ? null : () => _apply(execute: false),
             style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              visualDensity: VisualDensity.compact,
-            ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8),
+                visualDensity: VisualDensity.compact),
             child: const Text('미리보기'),
           ),
           const SizedBox(width: 6),
           FilledButton(
-            onPressed: _isApplying ? null : () async {
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('가격 적용'),
-                  content: const Text('준비완료 상태의 가격변경 항목을 POS에 실제 반영합니다.\n계속하시겠습니까?'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('취소')),
-                    FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('적용')),
-                  ],
-                ),
-              );
-              if (confirmed == true) _apply(execute: true);
-            },
+            onPressed: _isApplying
+                ? null
+                : () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('가격 적용'),
+                        content: const Text(
+                            '준비완료 상태의 가격변경 항목을 POS에 실제 반영합니다.\n계속하시겠습니까?'),
+                        actions: [
+                          TextButton(
+                              onPressed: () =>
+                                  Navigator.of(ctx).pop(false),
+                              child: const Text('취소')),
+                          FilledButton(
+                              onPressed: () =>
+                                  Navigator.of(ctx).pop(true),
+                              child: const Text('적용')),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) _apply(execute: true);
+                  },
             style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              backgroundColor: const Color(0xFF0D9488),
-              visualDensity: VisualDensity.compact,
-            ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8),
+                backgroundColor: const Color(0xFF0D9488),
+                visualDensity: VisualDensity.compact),
             child: Text(_isApplying ? '적용 중...' : 'POS 적용'),
           ),
         ],
@@ -789,167 +1356,90 @@ class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
   }
 }
 
-// ─── Price Change Create Sheet ────────────────────────────────────────────────
+// ─── Metric Grid ──────────────────────────────────────────────────────────────
 
-class _PriceChangeCreateSheet extends StatefulWidget {
-  final AppState appState;
-  final VoidCallback onCreated;
-  const _PriceChangeCreateSheet({required this.appState, required this.onCreated});
+class _MetricGrid extends StatelessWidget {
+  final List<Widget> cards;
+  const _MetricGrid({required this.cards});
 
   @override
-  State<_PriceChangeCreateSheet> createState() => _PriceChangeCreateSheetState();
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth >= 720
+            ? (constraints.maxWidth - 12) / 2
+            : constraints.maxWidth;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: cards
+              .map((c) => SizedBox(width: width, child: c))
+              .toList(growable: false),
+        );
+      },
+    );
+  }
 }
 
-class _PriceChangeCreateSheetState extends State<_PriceChangeCreateSheet> {
-  final _itemNameController = TextEditingController();
-  final _itemCodeController = TextEditingController();
-  final _currentPriceController = TextEditingController();
-  final _targetPriceController = TextEditingController();
-  final _notesController = TextEditingController();
-  bool _isSubmitting = false;
-  String _error = '';
+// ─── Info Row ─────────────────────────────────────────────────────────────────
 
-  @override
-  void dispose() {
-    _itemNameController.dispose();
-    _itemCodeController.dispose();
-    _currentPriceController.dispose();
-    _targetPriceController.dispose();
-    _notesController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final name = _itemNameController.text.trim();
-    final targetText = _targetPriceController.text.replaceAll(',', '');
-    final targetPrice = int.tryParse(targetText);
-
-    if (name.isEmpty) {
-      setState(() => _error = '품목명을 입력하세요.');
-      return;
-    }
-    if (targetPrice == null || targetPrice < 0) {
-      setState(() => _error = '목표 가격을 올바르게 입력하세요.');
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-      _error = '';
-    });
-
-    try {
-      final body = <String, dynamic>{
-        'item_name': name,
-        'target_price': targetPrice,
-      };
-      final code = _itemCodeController.text.trim();
-      if (code.isNotEmpty) body['item_code'] = code;
-      final currentText = _currentPriceController.text.replaceAll(',', '');
-      final currentPrice = int.tryParse(currentText);
-      if (currentPrice != null) body['current_price'] = currentPrice;
-      final notes = _notesController.text.trim();
-      if (notes.isNotEmpty) body['notes'] = notes;
-
-      await widget.appState.postJson('/api/menu-workspace/price-change', body: body);
-      if (!mounted) return;
-      widget.onCreated();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _isSubmitting = false;
-      });
-    }
-  }
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _InfoRow({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        16, 20, 16,
-        MediaQuery.of(context).viewInsets.bottom + 32,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              '가격변경 항목 등록',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _itemNameController,
-              decoration: const InputDecoration(
-                labelText: '품목명 *',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _itemCodeController,
-              decoration: const InputDecoration(
-                labelText: '품목코드 (선택)',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _currentPriceController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '현재 가격 (선택)',
-                      suffixText: '원',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextField(
-                    controller: _targetPriceController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '목표 가격 *',
-                      suffixText: '원',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _notesController,
-              decoration: const InputDecoration(
-                labelText: '메모 (선택)',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-            if (_error.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(_error, style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13)),
-            ],
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _isSubmitting ? null : _submit,
-              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0D9488)),
-              child: Text(_isSubmitting ? '등록 중...' : '등록'),
-            ),
-          ],
-        ),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(label,
+                style:
+                    const TextStyle(color: Color(0xFF64748B))),
+          ),
+          Expanded(
+            child: Text(value,
+                style:
+                    const TextStyle(fontWeight: FontWeight.w600)),
+          ),
+        ],
       ),
     );
   }
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+String _statusLabel(String s) => switch (s) {
+      'draft' => '작성중',
+      'reviewed' => '검토됨',
+      'ready' => '준비완료',
+      'done' => '완료',
+      _ => s,
+    };
+
+String _kindLabel(String k) => switch (k) {
+      'price_update' => '가격 변경',
+      'new_item' => '신규 등록',
+      _ => k,
+    };
+
+String _won(num value) {
+  final abs = value.abs().round();
+  final str = abs.toString();
+  final buffer = StringBuffer();
+  for (int i = 0; i < str.length; i++) {
+    if (i > 0 && (str.length - i) % 3 == 0) buffer.write(',');
+    buffer.write(str[i]);
+  }
+  return value < 0 ? '-${buffer.toString()}' : buffer.toString();
+}
+
+String _wonSigned(int value) {
+  final sign = value >= 0 ? '+' : '';
+  return '$sign${_won(value)}';
+}
