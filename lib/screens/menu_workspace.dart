@@ -766,6 +766,31 @@ class _QuickPriceChangeSheetState
           ),
           const SizedBox(height: 4),
           const Divider(),
+          // 상품코드 없음 경고
+          if (p.itemCode.isEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                border: Border.all(color: const Color(0xFFF59E0B)),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_amber_outlined,
+                      size: 16, color: Color(0xFF92400E)),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '이 상품은 POS 상품코드가 없어 등록은 되지만 POS에 자동 적용할 수 없습니다.',
+                      style: TextStyle(
+                          fontSize: 12, color: Color(0xFF92400E)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 12),
           TextField(
             controller: _targetController,
@@ -1299,20 +1324,32 @@ class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
         },
       );
       if (!mounted) return;
-      final applied =
-          result['applied_count'] ?? result['count'] ?? '?';
-      final skipped =
-          result['skipped_count'] ?? result['skipped'] ?? 0;
+      // 응답: {"apply_result": {"success_count": ..., "items": [...]}, "skipped": [...]}
+      final applyResult = result['apply_result'] as Map? ?? {};
+      final skippedList = result['skipped'] as List? ?? [];
+      final applied = applyResult['success_count'] ?? 0;
+      final failed = applyResult['failed_count'] ?? 0;
+      final skippedCount = skippedList.length;
+
+      final parts = <String>[
+        if (execute) '$applied건 적용 완료' else '[미리보기] $applied건 적용 예정',
+        if (failed > 0) '$failed건 실패',
+        if (skippedCount > 0) '$skippedCount건 건너눠(상품코드 없음)',
+      ];
       messenger.showSnackBar(SnackBar(
-        content: Text(execute
-            ? '$applied건 가격 적용 완료${skipped > 0 ? ', $skipped건 건너뜀' : ''}'
-            : '[미리보기] $applied건 적용 예정${skipped > 0 ? ', $skipped건 건너뜀' : ''}'),
+        content: Text(parts.join(' · ')),
+        duration: const Duration(seconds: 4),
       ));
-      if (execute) widget.onApplied();
+      if (execute && (applied as int) > 0) widget.onApplied();
     } catch (e) {
       if (!mounted) return;
-      messenger
-          .showSnackBar(SnackBar(content: Text('오류: $e')));
+      // ApiException 메시지에서 detail 추출 (e.g. '상품코드와 목표가...')
+      final msg = e.toString().replaceFirst('ApiException: ', '');
+      messenger.showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: const Color(0xFFDC2626),
+        duration: const Duration(seconds: 5),
+      ));
     } finally {
       if (mounted) setState(() => _isApplying = false);
     }
