@@ -145,11 +145,12 @@ class ApiService {
     String? sessionCookie,
     String? csrfToken,
     bool includeCsrfToken = true,
+    String method = 'POST',
   }) async {
     final uri = buildUri(baseUrl, endpoint);
     try {
       final response = await _send(
-        'POST',
+        method,
         uri,
         body: body,
         sessionCookie: sessionCookie,

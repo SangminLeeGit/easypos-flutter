@@ -714,3 +714,224 @@ double _asDouble(Object? value) {
   }
   return 0;
 }
+
+// ─── Menu Engineering ─────────────────────────────────────────────────────────
+
+class MenuEngineeringItem {
+  final String itemName;
+  final String itemCode;
+  final int totalQty;
+  final int totalAmount;
+  final int totalDiscount;
+  final int daysSold;
+  final int lineCount;
+  final int avgPrice;
+  final String quadrant;
+  final String label;
+
+  const MenuEngineeringItem({
+    required this.itemName,
+    required this.itemCode,
+    required this.totalQty,
+    required this.totalAmount,
+    required this.totalDiscount,
+    required this.daysSold,
+    required this.lineCount,
+    required this.avgPrice,
+    required this.quadrant,
+    required this.label,
+  });
+
+  factory MenuEngineeringItem.fromJson(Map<String, dynamic> json) {
+    return MenuEngineeringItem(
+      itemName: _asString(json['item_name']),
+      itemCode: _asString(json['item_code']),
+      totalQty: _asInt(json['total_qty']),
+      totalAmount: _asInt(json['total_amount']),
+      totalDiscount: _asInt(json['total_discount']),
+      daysSold: _asInt(json['days_sold']),
+      lineCount: _asInt(json['line_count']),
+      avgPrice: _asInt(json['avg_price']),
+      quadrant: _asString(json['quadrant']),
+      label: _asString(json['label']),
+    );
+  }
+}
+
+class MenuEngineeringData {
+  final String error;
+  final String fromDate;
+  final String toDate;
+  final List<MenuEngineeringItem> menuItems;
+  final int avgQty;
+  final int avgPrice;
+  final Map<String, int> quadrantCounts;
+
+  const MenuEngineeringData({
+    required this.error,
+    required this.fromDate,
+    required this.toDate,
+    required this.menuItems,
+    required this.avgQty,
+    required this.avgPrice,
+    required this.quadrantCounts,
+  });
+
+  factory MenuEngineeringData.fromJson(Map<String, dynamic> json) {
+    final rawCounts = json['quadrant_counts'];
+    final counts = <String, int>{};
+    if (rawCounts is Map) {
+      rawCounts.forEach((k, v) {
+        counts[k.toString()] = _asInt(v);
+      });
+    }
+    return MenuEngineeringData(
+      error: _asString(json['error']),
+      fromDate: _asString(json['from_date']),
+      toDate: _asString(json['to_date']),
+      menuItems: _asListOfMaps(json['menu_items'])
+          .map(MenuEngineeringItem.fromJson)
+          .toList(growable: false),
+      avgQty: _asInt(json['avg_qty']),
+      avgPrice: _asInt(json['avg_price']),
+      quadrantCounts: counts,
+    );
+  }
+}
+
+// ─── Forecast ─────────────────────────────────────────────────────────────────
+
+class ForecastDayRecord {
+  final String businessDate;
+  final int grossAmount;
+  final int receiptCount;
+  final int customerCount;
+
+  const ForecastDayRecord({
+    required this.businessDate,
+    required this.grossAmount,
+    required this.receiptCount,
+    required this.customerCount,
+  });
+
+  factory ForecastDayRecord.fromJson(Map<String, dynamic> json) {
+    return ForecastDayRecord(
+      businessDate: _asString(json['business_date']),
+      grossAmount: _asInt(json['gross_amount']),
+      receiptCount: _asInt(json['receipt_count']),
+      customerCount: _asInt(json['customer_count']),
+    );
+  }
+}
+
+class ForecastData {
+  final String error;
+  final int year;
+  final int month;
+  final List<ForecastDayRecord> days;
+  final int daysInMonth;
+  final int actualTotal;
+  final int actualDays;
+  final int remainingDays;
+  final int forecastRemaining;
+  final int projectedTotal;
+  final int dailyAvg;
+  final double progressPct;
+
+  const ForecastData({
+    required this.error,
+    required this.year,
+    required this.month,
+    required this.days,
+    required this.daysInMonth,
+    required this.actualTotal,
+    required this.actualDays,
+    required this.remainingDays,
+    required this.forecastRemaining,
+    required this.projectedTotal,
+    required this.dailyAvg,
+    required this.progressPct,
+  });
+
+  factory ForecastData.fromJson(Map<String, dynamic> json) {
+    return ForecastData(
+      error: _asString(json['error']),
+      year: _asInt(json['year']),
+      month: _asInt(json['month']),
+      days: _asListOfMaps(json['days'])
+          .map(ForecastDayRecord.fromJson)
+          .toList(growable: false),
+      daysInMonth: _asInt(json['days_in_month']),
+      actualTotal: _asInt(json['actual_total']),
+      actualDays: _asInt(json['actual_days']),
+      remainingDays: _asInt(json['remaining_days']),
+      forecastRemaining: _asInt(json['forecast_remaining']),
+      projectedTotal: _asInt(json['projected_total']),
+      dailyAvg: _asInt(json['daily_avg']),
+      progressPct: _asDouble(json['progress_pct']),
+    );
+  }
+}
+
+// ─── ABC Analysis ─────────────────────────────────────────────────────────────
+
+class AbcItem {
+  final String itemName;
+  final int totalQty;
+  final int totalAmount;
+  final double pct;
+  final double cumPct;
+  final String grade;
+
+  const AbcItem({
+    required this.itemName,
+    required this.totalQty,
+    required this.totalAmount,
+    required this.pct,
+    required this.cumPct,
+    required this.grade,
+  });
+
+  factory AbcItem.fromJson(Map<String, dynamic> json) {
+    return AbcItem(
+      itemName: _asString(json['item_name']),
+      totalQty: _asInt(json['total_qty']),
+      totalAmount: _asInt(json['total_amount']),
+      pct: _asDouble(json['pct']),
+      cumPct: _asDouble(json['cum_pct']),
+      grade: _asString(json['grade']),
+    );
+  }
+}
+
+class AbcData {
+  final String error;
+  final List<AbcItem> items;
+  final Map<String, int> counts;
+  final int grandTotal;
+
+  const AbcData({
+    required this.error,
+    required this.items,
+    required this.counts,
+    required this.grandTotal,
+  });
+
+  factory AbcData.fromJson(Map<String, dynamic> json) {
+    final rawCounts = json['counts'];
+    final counts = <String, int>{};
+    if (rawCounts is Map) {
+      rawCounts.forEach((k, v) {
+        counts[k.toString()] = _asInt(v);
+      });
+    }
+    return AbcData(
+      error: _asString(json['error']),
+      items: _asListOfMaps(json['items'])
+          .map(AbcItem.fromJson)
+          .toList(growable: false),
+      counts: counts,
+      grandTotal: _asInt(json['grand_total']),
+    );
+  }
+}

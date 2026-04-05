@@ -401,8 +401,9 @@ class AppState extends ChangeNotifier {
   Future<Map<String, dynamic>> postJson(
     String endpoint, {
     Map<String, dynamic>? body,
+    String method = 'POST',
   }) async {
-    final response = await _postJsonWithAuth(endpoint, body: body);
+    final response = await _postJsonWithAuth(endpoint, body: body, method: method);
     final changed = _offlineMode;
     _offlineMode = false;
     if (changed) {
@@ -415,6 +416,7 @@ class AppState extends ChangeNotifier {
     String endpoint, {
     Map<String, dynamic>? body,
     bool allowRetry = true,
+    String method = 'POST',
   }) async {
     try {
       final response = await ApiService.postJson(
@@ -423,6 +425,7 @@ class AppState extends ChangeNotifier {
         body: body,
         sessionCookie: _sessionCookie,
         csrfToken: _csrfToken,
+        method: method,
       );
       if (response.sessionCookie != null &&
           response.sessionCookie!.isNotEmpty) {
@@ -438,6 +441,7 @@ class AppState extends ChangeNotifier {
           endpoint,
           body: body,
           allowRetry: false,
+          method: method,
         );
       }
       await _handleAuthError(error);

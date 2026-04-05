@@ -5,6 +5,56 @@ import '../models/dashboard_model.dart';
 import '../services/api.dart';
 import '../state/app_state.dart';
 
+// ─── Admin models ────────────────────────────────────────────────────────────
+
+class _AdminUser {
+  final String id;
+  final String loginId;
+  final String role;
+  final bool isActive;
+  final String? lastLogin;
+
+  const _AdminUser({
+    required this.id,
+    required this.loginId,
+    required this.role,
+    required this.isActive,
+    this.lastLogin,
+  });
+
+  factory _AdminUser.fromJson(Map<String, dynamic> j) => _AdminUser(
+        id: (j['id'] ?? '').toString(),
+        loginId: j['login_id']?.toString() ?? '',
+        role: j['role']?.toString() ?? '',
+        isActive: j['is_active'] == true,
+        lastLogin: j['last_login']?.toString(),
+      );
+}
+
+class _AuditEntry {
+  final String id;
+  final String loginId;
+  final String action;
+  final String? detail;
+  final String? createdAt;
+
+  const _AuditEntry({
+    required this.id,
+    required this.loginId,
+    required this.action,
+    this.detail,
+    this.createdAt,
+  });
+
+  factory _AuditEntry.fromJson(Map<String, dynamic> j) => _AuditEntry(
+        id: (j['id'] ?? '').toString(),
+        loginId: j['login_id']?.toString() ?? '',
+        action: j['action']?.toString() ?? '',
+        detail: j['detail']?.toString(),
+        createdAt: j['created_at']?.toString(),
+      );
+}
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -381,6 +431,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
           '오늘 날짜',
           UiFormat.weekday(ApiService.formatDate(DateTime.now())),
         ),
+        if (appState.hasAdminAccess) ...[
+          const SizedBox(height: 32),
+          const Text(
+            '관리자',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const _UserManagementScreen()),
+            ),
+            icon: const Icon(Icons.manage_accounts_outlined),
+            label: const Text('계정 관리'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const _AuditLogScreen()),
+            ),
+            icon: const Icon(Icons.history_outlined),
+            label: const Text('감사 로그'),
+          ),
+        ],
       ],
     );
   }
@@ -413,6 +490,277 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─── Admin: User Management ───────────────────────────────────────────────────
+
+class _UserManagementScreen extends StatefulWidget {
+  const _UserManagementScreen();
+
+  @override
+  State<_UserManagementScreen> createState() => _UserManagementScreenState();
+}
+
+class _UserManagementScreenState extends State<_UserManagementScreen> {
+  List<_AdminUser> _users = [];
+  bool _loading = true;
+  String _error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final appState = context.read<AppState>();
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+    try {
+      final data = await appState.fetchListParsed<_AdminUser>(
+        '/api/auth/users',
+        _AdminUser.fromJson,
+        cacheTtl: Duration.zero,
+      );
+      if (!mounted) return;
+      setState(() {
+        _users = data;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _editRole(_AdminUser user) async {
+    final appState = context.read<AppState>();
+    final roles = ['viewer', 'operator', 'admin'];
+    String selected = user.role;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('${user.loginId} 권한 변경'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: roles
+                .map(
+                  (r) => RadioListTile<String>(
+                    value: r,
+                    groupValue: selected,
+                    title: Text(r),
+                    onChanged: (v) {
+                      if (v != null) setDialogState(() => selected = v);
+                    },
+                  ),
+                )
+                .toList(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('적용'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await appState.postJson(
+        '/api/auth/users/${user.id}',
+        body: {'role': selected},
+        method: 'PATCH',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${user.loginId} 권한이 $selected로 변경되었습니다.')),
+      );
+      _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('오류: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('계정 관리', style: TextStyle(fontWeight: FontWeight.w700)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _load,
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error.isNotEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(_error,
+                        style: const TextStyle(color: Color(0xFFDC2626))),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _users.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) {
+                      final u = _users[i];
+                      return Card(
+                        margin: EdgeInsets.zero,
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            child: Text(
+                              u.loginId.isNotEmpty
+                                  ? u.loginId[0].toUpperCase()
+                                  : '?',
+                            ),
+                          ),
+                          title: Text(u.loginId,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: Text(
+                            '${u.role}  ·  ${u.isActive ? '활성' : '비활성'}',
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.edit_outlined),
+                            onPressed: () => _editRole(u),
+                            tooltip: '권한 변경',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+    );
+  }
+}
+
+// ─── Admin: Audit Log ─────────────────────────────────────────────────────────
+
+class _AuditLogScreen extends StatefulWidget {
+  const _AuditLogScreen();
+
+  @override
+  State<_AuditLogScreen> createState() => _AuditLogScreenState();
+}
+
+class _AuditLogScreenState extends State<_AuditLogScreen> {
+  List<_AuditEntry> _entries = [];
+  bool _loading = true;
+  String _error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final appState = context.read<AppState>();
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+    try {
+      final data = await appState.fetchListParsed<_AuditEntry>(
+        '/api/auth/audit-logs',
+        _AuditEntry.fromJson,
+        cacheTtl: Duration.zero,
+      );
+      if (!mounted) return;
+      setState(() {
+        _entries = data;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title:
+            const Text('감사 로그', style: TextStyle(fontWeight: FontWeight.w700)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _load,
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error.isNotEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(_error,
+                        style: const TextStyle(color: Color(0xFFDC2626))),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _entries.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (_, i) {
+                      final e = _entries[i];
+                      return ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.receipt_long_outlined,
+                            size: 18, color: Color(0xFF64748B)),
+                        title: Text(
+                          e.action,
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text(
+                          '${e.loginId}${e.detail != null ? '  ·  ${e.detail}' : ''}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        trailing: e.createdAt != null
+                            ? Text(
+                                UiFormat.compactDateTime(e.createdAt),
+                                style: const TextStyle(
+                                    fontSize: 11, color: Color(0xFF94A3B8)),
+                              )
+                            : null,
+                      );
+                    },
+                  ),
+                ),
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/analytics_models.dart';
+import '../services/api.dart';
 import '../models/dashboard_model.dart';
 import '../state/app_state.dart';
 import '../widgets/cache_notice.dart';
@@ -16,7 +17,7 @@ class AnalyticsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 7,
+      length: 10,
       child: Column(
         children: [
           Container(
@@ -52,6 +53,9 @@ class AnalyticsScreen extends StatelessWidget {
                     Tab(text: '결제'),
                     Tab(text: '비교'),
                     Tab(text: '트렌드'),
+                    Tab(text: '메뉴공학'),
+                    Tab(text: '예측'),
+                    Tab(text: 'ABC'),
                   ],
                 ),
               ],
@@ -67,6 +71,9 @@ class AnalyticsScreen extends StatelessWidget {
                 _PaymentsTab(),
                 _CompareTab(),
                 _TrendsTab(),
+                _MenuEngineeringTab(),
+                _ForecastTab(),
+                _AbcTab(),
               ],
             ),
           ),
@@ -1409,4 +1416,558 @@ String _dowLabel(int dow) {
 String _percentText(double value) {
   final sign = value >= 0 ? '+' : '';
   return '$sign${value.toStringAsFixed(1)}%';
+}
+
+// ─── Menu Engineering Tab ─────────────────────────────────────────────────────
+
+class _MenuEngineeringTab extends StatefulWidget {
+  const _MenuEngineeringTab();
+
+  @override
+  State<_MenuEngineeringTab> createState() => _MenuEngineeringTabState();
+}
+
+class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
+  late DateTimeRange _range;
+  MenuEngineeringData? _data;
+  bool _isLoading = true;
+  String _error = '';
+  bool _fromCache = false;
+  DateTime? _cachedAt;
+
+  @override
+  void initState() {
+    super.initState();
+    _range = _defaultRange(days: 29);
+    _load();
+  }
+
+  Future<void> _pickRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      initialDateRange: _range,
+      firstDate: DateTime(2024),
+      lastDate: DateTime.now(),
+    );
+    if (picked == null) return;
+    setState(() => _range = picked);
+    await _load();
+  }
+
+  Future<void> _load() async {
+    final appState = context.read<AppState>();
+    setState(() {
+      _isLoading = true;
+      _error = '';
+    });
+    try {
+      final response = await appState.fetchMapParsed(
+        '/api/menu-engineering',
+        params: _rangeParams(_range),
+        parser: MenuEngineeringData.fromJson,
+      );
+      if (!mounted) return;
+      setState(() {
+        _data = response.data;
+        _fromCache = response.fromCache;
+        _cachedAt = response.cachedAt;
+        _isLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (_error.isNotEmpty) {
+      return EmptyState(
+        title: '메뉴 공학 분석을 불러오지 못했습니다.',
+        message: _error,
+        action: FilledButton(onPressed: _load, child: const Text('다시 시도')),
+      );
+    }
+    final data = _data;
+    if (data == null || data.error.isNotEmpty) {
+      return EmptyState(
+        title: '메뉴 공학 데이터가 없습니다.',
+        message: data?.error,
+        action: FilledButton(onPressed: _load, child: const Text('새로고침')),
+      );
+    }
+
+    final quadrants = {
+      'Star': data.menuItems.where((i) => i.quadrant == 'Star').toList(),
+      'Puzzle': data.menuItems.where((i) => i.quadrant == 'Puzzle').toList(),
+      'Plowhorse': data.menuItems.where((i) => i.quadrant == 'Plowhorse').toList(),
+      'Dog': data.menuItems.where((i) => i.quadrant == 'Dog').toList(),
+    };
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          _AnalyticsHeaderRow(
+            title: '메뉴 공학',
+            subtitle: _rangeLabel(_range),
+            actionLabel: '기간 변경',
+            onAction: _pickRange,
+          ),
+          if (_fromCache && _cachedAt != null) ...[
+            const SizedBox(height: 8),
+            CacheNotice(cachedAt: _cachedAt),
+          ],
+          const SizedBox(height: 16),
+          _AnalyticsMetricGrid(
+            cards: [
+              StatCard(
+                label: '★ 스타',
+                value: UiFormat.number(data.quadrantCounts['Star'] ?? 0),
+                accent: true,
+              ),
+              StatCard(
+                label: '? 퍼즐',
+                value: UiFormat.number(data.quadrantCounts['Puzzle'] ?? 0),
+              ),
+              StatCard(
+                label: '🐴 플라우호스',
+                value: UiFormat.number(data.quadrantCounts['Plowhorse'] ?? 0),
+              ),
+              StatCard(
+                label: '🐕 도그',
+                value: UiFormat.number(data.quadrantCounts['Dog'] ?? 0),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...quadrants.entries.where((e) => e.value.isNotEmpty).map((entry) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Panel(
+                title: _quadrantTitle(entry.key),
+                subtitle: _quadrantSubtitle(entry.key),
+                child: Column(
+                  children: entry.value.take(8).map((item) {
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(item.itemName),
+                      subtitle: Text(
+                        '판매량 ${UiFormat.number(item.totalQty)}개 · 평균가 ${UiFormat.won(item.avgPrice)}',
+                      ),
+                      trailing: Text(
+                        UiFormat.won(item.totalAmount),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    );
+                  }).toList(growable: false),
+                ),
+              ),
+            );
+          }).toList(growable: false),
+        ],
+      ),
+    );
+  }
+
+  String _quadrantTitle(String q) {
+    switch (q) {
+      case 'Star':      return '★ 스타 (주력)';
+      case 'Puzzle':    return '? 퍼즐 (홍보 필요)';
+      case 'Plowhorse': return '🐴 플라우호스 (원가 검토)';
+      case 'Dog':       return '🐕 도그 (퇴출 검토)';
+      default:          return q;
+    }
+  }
+
+  String _quadrantSubtitle(String q) {
+    switch (q) {
+      case 'Star':      return '인기 높고 수익성 좋음';
+      case 'Puzzle':    return '수익성 높지만 판매량 부족';
+      case 'Plowhorse': return '판매량 많지만 수익성 낮음';
+      case 'Dog':       return '인기와 수익성 모두 낮음';
+      default:          return '';
+    }
+  }
+}
+
+// ─── Forecast Tab ─────────────────────────────────────────────────────────────
+
+class _ForecastTab extends StatefulWidget {
+  const _ForecastTab();
+
+  @override
+  State<_ForecastTab> createState() => _ForecastTabState();
+}
+
+class _ForecastTabState extends State<_ForecastTab> {
+  late DateTime _selectedMonth;
+  ForecastData? _data;
+  bool _isLoading = true;
+  String _error = '';
+  bool _fromCache = false;
+  DateTime? _cachedAt;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _selectedMonth = DateTime(now.year, now.month);
+    _load();
+  }
+
+  Future<void> _pickMonth() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedMonth,
+      firstDate: DateTime(2024),
+      lastDate: DateTime.now(),
+      initialDatePickerMode: DatePickerMode.year,
+    );
+    if (picked == null) return;
+    setState(() => _selectedMonth = DateTime(picked.year, picked.month));
+    await _load();
+  }
+
+  Future<void> _load() async {
+    final appState = context.read<AppState>();
+    setState(() {
+      _isLoading = true;
+      _error = '';
+    });
+    try {
+      final response = await appState.fetchMapParsed(
+        '/api/forecast',
+        params: {
+          'year': _selectedMonth.year,
+          'month': _selectedMonth.month,
+        },
+        parser: ForecastData.fromJson,
+      );
+      if (!mounted) return;
+      setState(() {
+        _data = response.data;
+        _fromCache = response.fromCache;
+        _cachedAt = response.cachedAt;
+        _isLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (_error.isNotEmpty) {
+      return EmptyState(
+        title: '수요 예측을 불러오지 못했습니다.',
+        message: _error,
+        action: FilledButton(onPressed: _load, child: const Text('다시 시도')),
+      );
+    }
+    final data = _data;
+    if (data == null || data.error.isNotEmpty) {
+      return EmptyState(
+        title: '예측 데이터가 없습니다.',
+        message: data?.error,
+        action: FilledButton(onPressed: _load, child: const Text('새로고침')),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          _AnalyticsHeaderRow(
+            title: '${data.year}년 ${data.month}월 예측',
+            subtitle: '실적 + DOW 기반 잔여일 예측',
+            actionLabel: '월 선택',
+            onAction: _pickMonth,
+          ),
+          if (_fromCache && _cachedAt != null) ...[
+            const SizedBox(height: 8),
+            CacheNotice(cachedAt: _cachedAt),
+          ],
+          const SizedBox(height: 16),
+          _AnalyticsMetricGrid(
+            cards: [
+              StatCard(
+                label: '실적 합계',
+                value: UiFormat.won(data.actualTotal),
+                accent: true,
+              ),
+              StatCard(
+                label: '예측 합산',
+                value: UiFormat.won(data.projectedTotal),
+              ),
+              StatCard(
+                label: '진행률',
+                value: '${data.progressPct.toStringAsFixed(1)}%',
+                sub: '${data.actualDays}일 / ${data.daysInMonth}일',
+              ),
+              StatCard(
+                label: '일평균',
+                value: UiFormat.won(data.dailyAvg),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Panel(
+            title: '월간 진행',
+            subtitle: '실적 일자별 매출 (최신 순)',
+            child: Column(
+              children: data.days.reversed.take(15).map((day) {
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(UiFormat.weekday(day.businessDate)),
+                  subtitle: Text(
+                    '영수 ${UiFormat.number(day.receiptCount)}건 · 고객 ${UiFormat.number(day.customerCount)}명',
+                  ),
+                  trailing: Text(
+                    UiFormat.won(day.grossAmount),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                );
+              }).toList(growable: false),
+            ),
+          ),
+          Panel(
+            title: '잔여일 예측',
+            subtitle: '요일 평균 기반 잔여 ${data.remainingDays}일 예측 매출',
+            child: Column(
+              children: [
+                _CompareInfoRow(
+                  label: '잔여 예측 합계',
+                  value: UiFormat.won(data.forecastRemaining),
+                ),
+                _CompareInfoRow(
+                  label: '최종 예상 총매출',
+                  value: UiFormat.won(data.projectedTotal),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── ABC Analysis Tab ─────────────────────────────────────────────────────────
+
+class _AbcTab extends StatefulWidget {
+  const _AbcTab();
+
+  @override
+  State<_AbcTab> createState() => _AbcTabState();
+}
+
+class _AbcTabState extends State<_AbcTab> {
+  late DateTimeRange _range;
+  AbcData? _data;
+  bool _isLoading = true;
+  String _error = '';
+  bool _fromCache = false;
+  DateTime? _cachedAt;
+
+  @override
+  void initState() {
+    super.initState();
+    _range = _defaultRange(days: 29);
+    _load();
+  }
+
+  Future<void> _pickRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      initialDateRange: _range,
+      firstDate: DateTime(2024),
+      lastDate: DateTime.now(),
+    );
+    if (picked == null) return;
+    setState(() => _range = picked);
+    await _load();
+  }
+
+  Future<void> _load() async {
+    final appState = context.read<AppState>();
+    setState(() {
+      _isLoading = true;
+      _error = '';
+    });
+    try {
+      final response = await appState.fetchMapParsed(
+        '/api/abc',
+        params: _rangeParams(_range),
+        parser: AbcData.fromJson,
+      );
+      if (!mounted) return;
+      setState(() {
+        _data = response.data;
+        _fromCache = response.fromCache;
+        _cachedAt = response.cachedAt;
+        _isLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (_error.isNotEmpty) {
+      return EmptyState(
+        title: 'ABC 분석을 불러오지 못했습니다.',
+        message: _error,
+        action: FilledButton(onPressed: _load, child: const Text('다시 시도')),
+      );
+    }
+    final data = _data;
+    if (data == null || data.error.isNotEmpty) {
+      return EmptyState(
+        title: 'ABC 데이터가 없습니다.',
+        message: data?.error,
+        action: FilledButton(onPressed: _load, child: const Text('새로고침')),
+      );
+    }
+
+    final gradeA = data.items.where((i) => i.grade == 'A').toList();
+    final gradeB = data.items.where((i) => i.grade == 'B').toList();
+    final gradeC = data.items.where((i) => i.grade == 'C').toList();
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          _AnalyticsHeaderRow(
+            title: 'ABC 파레토 분석',
+            subtitle: _rangeLabel(_range),
+            actionLabel: '기간 변경',
+            onAction: _pickRange,
+          ),
+          if (_fromCache && _cachedAt != null) ...[
+            const SizedBox(height: 8),
+            CacheNotice(cachedAt: _cachedAt),
+          ],
+          const SizedBox(height: 16),
+          _AnalyticsMetricGrid(
+            cards: [
+              StatCard(
+                label: 'A등급 (상위 70%)',
+                value: '${data.counts['A'] ?? 0}개',
+                accent: true,
+              ),
+              StatCard(
+                label: 'B등급 (70~90%)',
+                value: '${data.counts['B'] ?? 0}개',
+              ),
+              StatCard(
+                label: 'C등급 (하위 10%)',
+                value: '${data.counts['C'] ?? 0}개',
+              ),
+              StatCard(
+                label: '분석 총매출',
+                value: UiFormat.won(data.grandTotal),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (gradeA.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Panel(
+                title: 'A등급 — 핵심 품목',
+                subtitle: '누적 매출 상위 70% 구성 품목',
+                child: Column(
+                  children: gradeA.take(10).map((item) {
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(item.itemName),
+                      subtitle: Text(
+                        '비중 ${item.pct.toStringAsFixed(1)}% · 누적 ${item.cumPct.toStringAsFixed(1)}%',
+                      ),
+                      trailing: Text(
+                        UiFormat.won(item.totalAmount),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    );
+                  }).toList(growable: false),
+                ),
+              ),
+            ),
+          if (gradeB.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Panel(
+                title: 'B등급 — 보조 품목',
+                subtitle: '누적 70~90% 구간',
+                child: Column(
+                  children: gradeB.take(8).map((item) {
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(item.itemName),
+                      subtitle: Text(
+                        '비중 ${item.pct.toStringAsFixed(1)}% · 누적 ${item.cumPct.toStringAsFixed(1)}%',
+                      ),
+                      trailing: Text(
+                        UiFormat.won(item.totalAmount),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    );
+                  }).toList(growable: false),
+                ),
+              ),
+            ),
+          if (gradeC.isNotEmpty)
+            Panel(
+              title: 'C등급 — 저기여 품목',
+              subtitle: '누적 90%+ 구간',
+              child: Column(
+                children: gradeC.take(6).map((item) {
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(item.itemName),
+                    subtitle: Text(
+                      '비중 ${item.pct.toStringAsFixed(1)}%',
+                    ),
+                    trailing: Text(
+                      UiFormat.won(item.totalAmount),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ),
+                  );
+                }).toList(growable: false),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }

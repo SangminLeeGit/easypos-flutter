@@ -4,8 +4,9 @@ import 'package:provider/provider.dart';
 import 'screens/analytics.dart';
 import 'screens/dashboard.dart';
 import 'screens/login.dart';
+import 'screens/operations.dart';
 import 'screens/settings.dart';
-import 'screens/sync.dart';
+import 'screens/workforce.dart';
 import 'state/app_state.dart';
 
 Future<void> main() async {
@@ -97,11 +98,18 @@ class _MainLayoutState extends State<MainLayout> {
         screen: AnalyticsScreen(),
       ),
       const _NavigationItem(
-        title: '동기화',
-        label: '동기화',
-        icon: Icons.sync_outlined,
-        selectedIcon: Icons.sync,
-        screen: SyncScreen(),
+        title: '운영',
+        label: '운영',
+        icon: Icons.handyman_outlined,
+        selectedIcon: Icons.handyman,
+        screen: OperationsScreen(),
+      ),
+      const _NavigationItem(
+        title: '인력 관리',
+        label: '인력',
+        icon: Icons.people_outline,
+        selectedIcon: Icons.people,
+        screen: WorkforceScreen(),
         minimumRole: UserRole.operator,
       ),
       const _NavigationItem(
