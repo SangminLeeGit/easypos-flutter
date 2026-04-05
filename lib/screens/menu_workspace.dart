@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/menu_workspace_models.dart';
+import '../services/api.dart';
 import '../state/app_state.dart';
 import '../widgets/cache_notice.dart';
 import '../widgets/empty_state.dart';
@@ -32,6 +33,8 @@ class _ProductRow {
           (j['중분류명'] ?? j['middle_category'] ?? '').toString(),
         ].where((s) => s.isNotEmpty).join(' > '),
       );
+
+  bool get isLikelyOption => itemName.trim().startsWith('-->');
 
   static int? _parseInt(dynamic v) {
     if (v == null) return null;
@@ -347,19 +350,27 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
     super.dispose();
   }
 
-  Future<void> _loadAll() async {
+  Future<void> _loadProducts({
+    required String query,
+    required bool refresh,
+  }) async {
     final appState = context.read<AppState>();
+    final trimmedQuery = query.trim();
     setState(() {
       _isLoading = true;
       _loadError = '';
-      _hasSearched = false;
+      _hasSearched = trimmedQuery.isNotEmpty;
     });
     try {
       final result = await appState.fetchMapParsed<Map<String, dynamic>>(
         '/api/menu-workspace/product-registration',
-        params: {'query': '', 'refresh': 'false', 'cache_only': 'true'},
+        params: {
+          'query': trimmedQuery,
+          'refresh': refresh ? 'true' : 'false',
+          'cache_only': refresh ? 'false' : 'true',
+        },
         parser: (j) => j,
-        cacheTtl: const Duration(minutes: 10),
+        cacheTtl: refresh ? Duration.zero : const Duration(minutes: 10),
       );
       if (!mounted) return;
       final rows = (result.data['rows'] as List? ?? [])
@@ -379,42 +390,27 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
     }
   }
 
-  Future<void> _search(String query) async {
+  Future<void> _loadAll({bool refresh = false}) async {
+    await _loadProducts(query: '', refresh: refresh);
+  }
+
+  Future<void> _search(String query, {bool refresh = false}) async {
     final q = query.trim();
     if (q.isEmpty) {
       _searchController.clear();
-      _loadAll();
+      await _loadAll(refresh: refresh);
       return;
     }
-    final appState = context.read<AppState>();
-    setState(() {
-      _isLoading = true;
-      _loadError = '';
-      _hasSearched = true;
-    });
-    try {
-      final result = await appState.fetchMapParsed<Map<String, dynamic>>(
-        '/api/menu-workspace/product-registration',
-        params: {'query': q, 'refresh': 'false', 'cache_only': 'true'},
-        parser: (j) => j,
-        cacheTtl: const Duration(minutes: 10),
-      );
-      if (!mounted) return;
-      final rows = (result.data['rows'] as List? ?? [])
-          .map((e) =>
-              _ProductRow.fromRegistration(e as Map<String, dynamic>))
-          .toList();
-      setState(() {
-        _products = rows;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loadError = e.toString();
-        _isLoading = false;
-      });
+    await _loadProducts(query: q, refresh: refresh);
+  }
+
+  Future<void> _refreshCurrent() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) {
+      await _loadAll(refresh: true);
+      return;
     }
+    await _search(query, refresh: true);
   }
 
   void _openPriceChangeSheet(_ProductRow product) {
@@ -426,6 +422,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
       builder: (_) => _QuickPriceChangeSheet(
         product: product,
         appState: appState,
+        onDirectApplied: _refreshCurrent,
         onCreated: () {
           Navigator.of(context).pop();
           widget.onPriceChangeRegistered?.call();
@@ -500,7 +497,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
               ),
               const Spacer(),
               TextButton.icon(
-                onPressed: _loadAll,
+                onPressed: _refreshCurrent,
                 icon: const Icon(Icons.refresh, size: 16),
                 label: const Text('새로고침',
                     style: TextStyle(fontSize: 12)),
@@ -632,11 +629,13 @@ class _QuickPriceChangeSheet extends StatefulWidget {
   final _ProductRow product;
   final AppState appState;
   final VoidCallback onCreated;
+  final Future<void> Function()? onDirectApplied;
 
   const _QuickPriceChangeSheet({
     required this.product,
     required this.appState,
     required this.onCreated,
+    this.onDirectApplied,
   });
 
   @override
@@ -649,6 +648,7 @@ class _QuickPriceChangeSheetState
   final _targetController = TextEditingController();
   final _notesController = TextEditingController();
   bool _isSubmitting = false;
+  bool _isDirectApplying = false;
   String _error = '';
 
   @override
@@ -709,9 +709,114 @@ class _QuickPriceChangeSheetState
     }
   }
 
+  Future<Map<String, dynamic>> _pollBrowserApplyTask(String taskId) async {
+    for (var attempt = 0; attempt < 80; attempt++) {
+      final response = await widget.appState.fetchMapParsed<Map<String, dynamic>>(
+        '/api/price/browser-apply/$taskId',
+        parser: (j) => j,
+        cacheTtl: Duration.zero,
+      );
+      final task = response.data;
+      final status = (task['status'] ?? '').toString();
+      if (status == 'succeeded' || status == 'failed') {
+        return task;
+      }
+      await Future.delayed(const Duration(seconds: 3));
+    }
+    throw const ApiException('가격 변경 작업 응답이 지연되고 있습니다. 잠시 후 다시 확인해 주세요.');
+  }
+
+  Future<void> _applyDirectly() async {
+    final itemCode = widget.product.itemCode.trim();
+    if (itemCode.isEmpty) {
+      setState(() => _error = '상품코드가 없어 POS 즉시 적용을 실행할 수 없습니다.');
+      return;
+    }
+
+    final targetText = _targetController.text.replaceAll(',', '');
+    final targetPrice = int.tryParse(targetText);
+    if (targetPrice == null || targetPrice < 0) {
+      setState(() => _error = '변경할 가격을 올바르게 입력하세요.');
+      return;
+    }
+
+    setState(() {
+      _isDirectApplying = true;
+      _error = '';
+    });
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      final reason = _notesController.text.trim();
+      final started = await widget.appState.postJson(
+        '/api/price/browser-apply',
+        body: {
+          'product_code': itemCode,
+          'target_price': targetPrice,
+          'target_column': '판매가',
+          'execute': true,
+          'reason': reason.isNotEmpty ? reason : 'mobile-browser-apply',
+        },
+      );
+      final taskId = (started['task_id'] ?? '').toString().trim();
+      if (taskId.isEmpty) {
+        throw const ApiException('가격 변경 작업 ID를 받지 못했습니다.');
+      }
+
+      final task = await _pollBrowserApplyTask(taskId);
+      if (!mounted) return;
+
+      final taskStatus = (task['status'] ?? '').toString();
+      final rawResult = task['result'];
+      final taskResult = rawResult is Map<String, dynamic>
+          ? rawResult
+          : rawResult is Map
+              ? Map<String, dynamic>.from(rawResult)
+              : <String, dynamic>{};
+      final resultStatus = (taskResult['status'] ?? '').toString();
+      final itemName = (taskResult['item_name'] ?? widget.product.itemName)
+          .toString()
+          .trim();
+      final message = (taskResult['message'] ?? task['error_message'] ?? '')
+          .toString()
+          .trim();
+
+      if (taskStatus == 'succeeded' && resultStatus == 'applied') {
+        await widget.onDirectApplied?.call();
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              message.isNotEmpty ? '$itemName · $message' : '$itemName 가격이 POS에 적용됐습니다.',
+            ),
+            backgroundColor: const Color(0xFF0D9488),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+        return;
+      }
+
+      setState(() {
+        _error = message.isNotEmpty ? message : 'POS 가격 변경에 실패했습니다.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isDirectApplying = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = widget.product;
+    final isBusy = _isSubmitting || _isDirectApplying;
     return Padding(
       padding: EdgeInsets.fromLTRB(
           16,
@@ -791,6 +896,30 @@ class _QuickPriceChangeSheetState
                 ],
               ),
             ),
+          if (p.isLikelyOption)
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7ED),
+                border: Border.all(color: const Color(0xFFF59E0B)),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline,
+                      size: 16, color: Color(0xFF9A3412)),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '옵션/부가 항목처럼 보여 POS 직접 적용이 실패할 수 있습니다. 웹과 같은 Selenium 경로로 요청해도 POS 검색 결과에 없으면 적용되지 않습니다.',
+                      style: TextStyle(
+                          fontSize: 12, color: Color(0xFF9A3412)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 12),
           TextField(
             controller: _targetController,
@@ -819,14 +948,33 @@ class _QuickPriceChangeSheetState
                 style: const TextStyle(
                     color: Color(0xFFDC2626), fontSize: 13)),
           ],
+          if (_isDirectApplying) ...[
+            const SizedBox(height: 12),
+            const LinearProgressIndicator(minHeight: 3),
+            const SizedBox(height: 8),
+            const Text(
+              '웹과 동일한 헤드리스 Selenium 경로로 POS 가격 변경을 실행 중입니다. 최대 1~2분 정도 걸릴 수 있습니다.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            ),
+          ],
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: _isSubmitting ? null : _submit,
-            icon: const Icon(Icons.check),
-            label: Text(
-                _isSubmitting ? '등록 중...' : '가격변경 항목 등록'),
+            onPressed: isBusy || p.itemCode.isEmpty ? null : _applyDirectly,
+            icon: const Icon(Icons.rocket_launch_outlined),
+            label: Text(_isDirectApplying ? 'POS 적용 중...' : 'POS에 즉시 적용'),
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF0D9488),
+              backgroundColor: const Color(0xFF1D4ED8),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: isBusy ? null : _submit,
+            icon: const Icon(Icons.check_circle_outline),
+            label: Text(_isSubmitting ? '등록 중...' : '작업 목록에 등록'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF0D9488),
+              side: const BorderSide(color: Color(0xFF0D9488)),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
           ),
