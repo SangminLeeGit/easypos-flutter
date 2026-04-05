@@ -217,7 +217,7 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
     final entries = _filteredEntries;
     final s = snapshot.summary;
     final appState = context.watch<AppState>();
-    final hasReady = (snapshot.statusCounts['ready'] ?? 0) > 0;
+    final hasReady = entries.any((e) => e.status == 'ready' && e.kind == 'price_update');
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -1340,7 +1340,7 @@ class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
         content: Text(parts.join(' · ')),
         duration: const Duration(seconds: 4),
       ));
-      if (execute && (applied as int) > 0) widget.onApplied();
+      if (execute && applied is int && applied > 0) widget.onApplied();
     } catch (e) {
       if (!mounted) return;
       // ApiException 메시지에서 detail 추출 (e.g. '상품코드와 목표가...')
