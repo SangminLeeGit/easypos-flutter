@@ -99,90 +99,108 @@ class _MenuWorkspaceScreenState extends State<MenuWorkspaceScreen> {
 
     final entries = _filteredEntries;
     final s = snapshot.summary;
+    final appState = context.watch<AppState>();
+    final hasReady = (snapshot.statusCounts['ready'] ?? 0) > 0;
 
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            sliver: SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_fromCache && _cachedAt != null) ...[
-                    CacheNotice(cachedAt: _cachedAt),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      floatingActionButton: appState.hasOperatorAccess
+          ? FloatingActionButton.extended(
+              onPressed: () => _showPriceChangeSheet(context),
+              icon: const Icon(Icons.add),
+              label: const Text('가격변경 등록'),
+              backgroundColor: const Color(0xFF0D9488),
+              foregroundColor: Colors.white,
+            )
+          : null,
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_fromCache && _cachedAt != null) ...[  
+                      CacheNotice(cachedAt: _cachedAt),
+                      const SizedBox(height: 12),
+                    ],
+                    _MetricGrid(
+                      cards: [
+                        StatCard(
+                          label: '전체 항목',
+                          value: '${s.totalEntries}개',
+                          accent: true,
+                        ),
+                        StatCard(
+                          label: '적용 준비',
+                          value: '${s.readyCount}개',
+                        ),
+                        StatCard(
+                          label: '신규 등록',
+                          value: '${s.newItemCount}개',
+                        ),
+                        StatCard(
+                          label: '가격 변동 합계',
+                          value: _wonSigned(s.priceDeltaTotal),
+                        ),
+                      ],
+                    ),
+                    if (hasReady && appState.hasOperatorAccess) ...[  
+                      const SizedBox(height: 12),
+                      _ApplyReadyBanner(onApplied: _load),
+                    ],
+                    const SizedBox(height: 16),
+                    _FilterBar(
+                      filterStatus: _filterStatus,
+                      filterKind: _filterKind,
+                      onStatusChanged: (v) => setState(() => _filterStatus = v),
+                      onKindChanged: (v) => setState(() => _filterKind = v),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      decoration: const InputDecoration(
+                        hintText: '품목명 또는 코드 검색',
+                        prefixIcon: Icon(Icons.search),
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      onChanged: (v) => setState(() => _searchQuery = v),
+                    ),
                     const SizedBox(height: 12),
                   ],
-                  _MetricGrid(
-                    cards: [
-                      StatCard(
-                        label: '전체 항목',
-                        value: '${s.totalEntries}개',
-                        accent: true,
-                      ),
-                      StatCard(
-                        label: '적용 준비',
-                        value: '${s.readyCount}개',
-                      ),
-                      StatCard(
-                        label: '신규 등록',
-                        value: '${s.newItemCount}개',
-                      ),
-                      StatCard(
-                        label: '가격 변동 합계',
-                        value: _wonSigned(s.priceDeltaTotal),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _FilterBar(
-                    filterStatus: _filterStatus,
-                    filterKind: _filterKind,
-                    onStatusChanged: (v) => setState(() => _filterStatus = v),
-                    onKindChanged: (v) => setState(() => _filterKind = v),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    decoration: const InputDecoration(
-                      hintText: '품목명 또는 코드 검색',
-                      prefixIcon: Icon(Icons.search),
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                    onChanged: (v) => setState(() => _searchQuery = v),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-              ),
-            ),
-          ),
-          if (entries.isEmpty)
-            const SliverFillRemaining(
-              child: Center(
-                child: Text(
-                  '조건에 맞는 항목이 없습니다.',
-                  style: TextStyle(color: Color(0xFF64748B)),
                 ),
               ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              sliver: SliverList.separated(
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemCount: entries.length,
-                itemBuilder: (context, index) {
-                  return _MenuEntryCard(
-                    entry: entries[index],
-                    onTap: () => _showEntryDetail(context, entries[index]),
-                  );
-                },
-              ),
             ),
-        ],
+            if (entries.isEmpty)
+              const SliverFillRemaining(
+                child: Center(
+                  child: Text(
+                    '조건에 맞는 항목이 없습니다.',
+                    style: TextStyle(color: Color(0xFF64748B)),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+                sliver: SliverList.separated(
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemCount: entries.length,
+                  itemBuilder: (context, index) {
+                    return _MenuEntryCard(
+                      entry: entries[index],
+                      onTap: () => _showEntryDetail(context, entries[index]),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -191,6 +209,21 @@ class _MenuWorkspaceScreenState extends State<MenuWorkspaceScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MenuEntryDetailScreen(entry: entry, onUpdated: _load),
+      ),
+    );
+  }
+
+  void _showPriceChangeSheet(BuildContext context) {
+    final appState = context.read<AppState>();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _PriceChangeCreateSheet(
+        appState: appState,
+        onCreated: () {
+          Navigator.of(context).pop();
+          _load();
+        },
       ),
     );
   }
@@ -472,6 +505,8 @@ class _StatusUpdateSheet extends StatefulWidget {
 
 class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
   String _selectedStatus = '';
+  int? _newTargetPrice;
+  late final TextEditingController _targetPriceController;
   bool _isSubmitting = false;
   String _error = '';
 
@@ -479,10 +514,20 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
   void initState() {
     super.initState();
     _selectedStatus = widget.entry.status;
+    _targetPriceController = TextEditingController(
+      text: widget.entry.targetPrice?.toString() ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _targetPriceController.dispose();
+    super.dispose();
   }
 
   Future<void> _submit() async {
-    if (_selectedStatus == widget.entry.status) {
+    if (_selectedStatus == widget.entry.status &&
+        (_newTargetPrice == null || _newTargetPrice == widget.entry.targetPrice)) {
       Navigator.of(context).pop();
       return;
     }
@@ -491,9 +536,12 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
       _error = '';
     });
     try {
+      final body = <String, dynamic>{'status': _selectedStatus};
+      if (_newTargetPrice != null) body['target_price'] = _newTargetPrice;
       await widget.appState.postJson(
         '/api/menu-workspace/entries/${widget.entry.id}',
-        body: {'status': _selectedStatus},
+        body: body,
+        method: 'PATCH',
       );
       if (!mounted) return;
       widget.onUpdated();
@@ -536,6 +584,22 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
               }),
             ),
           ),
+          if (widget.entry.kind == 'price_update') ...[  
+            const SizedBox(height: 12),
+            TextField(
+              controller: _targetPriceController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: '목표 가격 (원)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (v) {
+                final parsed = int.tryParse(v.replaceAll(',', ''));
+                setState(() => _newTargetPrice = parsed);
+              },
+            ),
+          ],
           if (_error.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(_error, style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13)),
@@ -628,3 +692,264 @@ String _wonSigned(int value) {
   final sign = value >= 0 ? '+' : '';
   return '$sign${_won(value)}';
 }
+
+// ─── Apply-Ready Banner ───────────────────────────────────────────────────────
+
+class _ApplyReadyBanner extends StatefulWidget {
+  final VoidCallback onApplied;
+  const _ApplyReadyBanner({required this.onApplied});
+
+  @override
+  State<_ApplyReadyBanner> createState() => _ApplyReadyBannerState();
+}
+
+class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
+  bool _isApplying = false;
+
+  Future<void> _apply({required bool execute}) async {
+    final appState = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+
+    setState(() => _isApplying = true);
+    try {
+      final result = await appState.postJson(
+        '/api/menu-workspace/apply-ready',
+        body: {'execute': execute, 'reason': execute ? 'mobile-apply' : ''},
+      );
+      if (!mounted) return;
+      final applied = result['applied_count'] ?? result['count'] ?? '?';
+      final skipped = result['skipped_count'] ?? result['skipped'] ?? 0;
+      messenger.showSnackBar(SnackBar(
+        content: Text(execute
+            ? '$applied건 가격 적용 완료${skipped > 0 ? ', $skipped건 건너뜀' : ''}'
+            : '[미리보기] $applied건 적용 예정${skipped > 0 ? ', $skipped건 건너뜀' : ''}'),
+      ));
+      if (execute) widget.onApplied();
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('오류: $e')));
+    } finally {
+      if (mounted) setState(() => _isApplying = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color.fromRGBO(13, 148, 136, 0.08),
+        border: Border.all(color: const Color(0xFF0D9488)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.rocket_launch_outlined, color: Color(0xFF0D9488), size: 20),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              '준비완료 항목이 있습니다.',
+              style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+            ),
+          ),
+          OutlinedButton(
+            onPressed: _isApplying ? null : () => _apply(execute: false),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              visualDensity: VisualDensity.compact,
+            ),
+            child: const Text('미리보기'),
+          ),
+          const SizedBox(width: 6),
+          FilledButton(
+            onPressed: _isApplying ? null : () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('가격 적용'),
+                  content: const Text('준비완료 상태의 가격변경 항목을 POS에 실제 반영합니다.\n계속하시겠습니까?'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('취소')),
+                    FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('적용')),
+                  ],
+                ),
+              );
+              if (confirmed == true) _apply(execute: true);
+            },
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              backgroundColor: const Color(0xFF0D9488),
+              visualDensity: VisualDensity.compact,
+            ),
+            child: Text(_isApplying ? '적용 중...' : 'POS 적용'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Price Change Create Sheet ────────────────────────────────────────────────
+
+class _PriceChangeCreateSheet extends StatefulWidget {
+  final AppState appState;
+  final VoidCallback onCreated;
+  const _PriceChangeCreateSheet({required this.appState, required this.onCreated});
+
+  @override
+  State<_PriceChangeCreateSheet> createState() => _PriceChangeCreateSheetState();
+}
+
+class _PriceChangeCreateSheetState extends State<_PriceChangeCreateSheet> {
+  final _itemNameController = TextEditingController();
+  final _itemCodeController = TextEditingController();
+  final _currentPriceController = TextEditingController();
+  final _targetPriceController = TextEditingController();
+  final _notesController = TextEditingController();
+  bool _isSubmitting = false;
+  String _error = '';
+
+  @override
+  void dispose() {
+    _itemNameController.dispose();
+    _itemCodeController.dispose();
+    _currentPriceController.dispose();
+    _targetPriceController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final name = _itemNameController.text.trim();
+    final targetText = _targetPriceController.text.replaceAll(',', '');
+    final targetPrice = int.tryParse(targetText);
+
+    if (name.isEmpty) {
+      setState(() => _error = '품목명을 입력하세요.');
+      return;
+    }
+    if (targetPrice == null || targetPrice < 0) {
+      setState(() => _error = '목표 가격을 올바르게 입력하세요.');
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _error = '';
+    });
+
+    try {
+      final body = <String, dynamic>{
+        'item_name': name,
+        'target_price': targetPrice,
+      };
+      final code = _itemCodeController.text.trim();
+      if (code.isNotEmpty) body['item_code'] = code;
+      final currentText = _currentPriceController.text.replaceAll(',', '');
+      final currentPrice = int.tryParse(currentText);
+      if (currentPrice != null) body['current_price'] = currentPrice;
+      final notes = _notesController.text.trim();
+      if (notes.isNotEmpty) body['notes'] = notes;
+
+      await widget.appState.postJson('/api/menu-workspace/price-change', body: body);
+      if (!mounted) return;
+      widget.onCreated();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _isSubmitting = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        16, 20, 16,
+        MediaQuery.of(context).viewInsets.bottom + 32,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              '가격변경 항목 등록',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _itemNameController,
+              decoration: const InputDecoration(
+                labelText: '품목명 *',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _itemCodeController,
+              decoration: const InputDecoration(
+                labelText: '품목코드 (선택)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _currentPriceController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '현재 가격 (선택)',
+                      suffixText: '원',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _targetPriceController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '목표 가격 *',
+                      suffixText: '원',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _notesController,
+              decoration: const InputDecoration(
+                labelText: '메모 (선택)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            if (_error.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(_error, style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13)),
+            ],
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: _isSubmitting ? null : _submit,
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0D9488)),
+              child: Text(_isSubmitting ? '등록 중...' : '등록'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
