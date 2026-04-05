@@ -42,35 +42,65 @@ class _ProductRow {
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
-class MenuWorkspaceScreen extends StatelessWidget {
+class MenuWorkspaceScreen extends StatefulWidget {
   const MenuWorkspaceScreen({super.key});
 
   @override
+  State<MenuWorkspaceScreen> createState() => _MenuWorkspaceScreenState();
+}
+
+class _MenuWorkspaceScreenState extends State<MenuWorkspaceScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+  final _workspaceRefreshTick = ValueNotifier<int>(0);
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _workspaceRefreshTick.dispose();
+    super.dispose();
+  }
+
+  void _onPriceChangeRegistered() {
+    _workspaceRefreshTick.value++;
+    _tabController.animateTo(1);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Column(
-        children: [
-          const TabBar(
-            tabs: [
-              Tab(text: '메뉴 선택'),
-              Tab(text: '작업 목록'),
+    return Column(
+      children: [
+        TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: '메뉴 선택'),
+            Tab(text: '작업 목록'),
+          ],
+          labelColor: const Color(0xFF0D9488),
+          unselectedLabelColor: const Color(0xFF64748B),
+          indicatorColor: const Color(0xFF0D9488),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _ProductBrowserTab(
+                onPriceChangeRegistered: _onPriceChangeRegistered,
+              ),
+              _WorkspaceTab(
+                refreshNotifier: _workspaceRefreshTick,
+              ),
             ],
-            labelColor: Color(0xFF0D9488),
-            unselectedLabelColor: Color(0xFF64748B),
-            indicatorColor: Color(0xFF0D9488),
           ),
-          const Divider(height: 1),
-          Expanded(
-            child: TabBarView(
-              children: [
-                _ProductBrowserTab(),
-                _WorkspaceTab(),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -78,6 +108,9 @@ class MenuWorkspaceScreen extends StatelessWidget {
 // ─── Tab 1: Workspace entries ─────────────────────────────────────────────────
 
 class _WorkspaceTab extends StatefulWidget {
+  final ValueNotifier<int>? refreshNotifier;
+  const _WorkspaceTab({this.refreshNotifier});
+
   @override
   State<_WorkspaceTab> createState() => _WorkspaceTabState();
 }
@@ -99,10 +132,21 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
   @override
   void initState() {
     super.initState();
+    widget.refreshNotifier?.addListener(_onRefreshRequest);
     _load();
   }
 
-  Future<void> _load() async {
+  @override
+  void dispose() {
+    widget.refreshNotifier?.removeListener(_onRefreshRequest);
+    super.dispose();
+  }
+
+  void _onRefreshRequest() {
+    if (mounted && !_isLoading) _load(force: true);
+  }
+
+  Future<void> _load({bool force = false}) async {
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -112,7 +156,7 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
       final response = await appState.fetchMapParsed(
         '/api/menu-workspace',
         parser: WorkspaceSnapshot.fromJson,
-        cacheTtl: const Duration(minutes: 5),
+        cacheTtl: force ? Duration.zero : const Duration(minutes: 5),
       );
       if (!mounted) return;
       setState(() {
@@ -272,6 +316,9 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
 // ─── Tab 2: Product Browser ───────────────────────────────────────────────────
 
 class _ProductBrowserTab extends StatefulWidget {
+  final VoidCallback? onPriceChangeRegistered;
+  const _ProductBrowserTab({this.onPriceChangeRegistered});
+
   @override
   State<_ProductBrowserTab> createState() => _ProductBrowserTabState();
 }
@@ -381,10 +428,16 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
         appState: appState,
         onCreated: () {
           Navigator.of(context).pop();
+          widget.onPriceChangeRegistered?.call();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text(
-                    '${product.itemName} 가격변경 항목이 등록되었습니다.')),
+              content: Text(
+                  '${product.itemName} 가격변경이 준비완료로 등록됐습니다.'),
+              action: SnackBarAction(
+                label: '작업 목록 확인',
+                onPressed: () {},
+              ),
+            ),
           );
         },
       ),
@@ -634,8 +687,17 @@ class _QuickPriceChangeSheetState
       final notes = _notesController.text.trim();
       if (notes.isNotEmpty) body['notes'] = notes;
 
-      await widget.appState
+      final result = await widget.appState
           .postJson('/api/menu-workspace/price-change', body: body);
+      // 자동으로 '준비완료(ready)' 상태로 승격 → apply-ready 배너 즉시 활성화
+      final entryId = result['id'];
+      if (entryId is int) {
+        await widget.appState.postJson(
+          '/api/menu-workspace/entries/$entryId',
+          body: {'status': 'ready'},
+          method: 'PATCH',
+        );
+      }
       if (!mounted) return;
       widget.onCreated();
     } catch (e) {
