@@ -274,7 +274,7 @@ class _SignageScreenState extends State<SignageScreen> {
     return Stack(
       children: [
         ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 140),
           children: [
             // 오류/성공 배너
             if (_error.isNotEmpty) _Banner(text: _error, isError: true),
@@ -485,29 +485,23 @@ class _LabeledFieldState extends State<_LabeledField> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: widget.maxLines > 1
-          ? CrossAxisAlignment.start
-          : CrossAxisAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 90,
-          child: Text(
-            widget.label,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-          ),
+        Text(
+          widget.label,
+          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
         ),
-        Expanded(
-          child: TextField(
-            controller: _ctrl,
-            maxLines: widget.maxLines,
-            onChanged: widget.onChanged,
-            style: const TextStyle(fontSize: 14),
-            decoration: const InputDecoration(
-              isDense: true,
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            ),
+        const SizedBox(height: 4),
+        TextField(
+          controller: _ctrl,
+          maxLines: widget.maxLines,
+          onChanged: widget.onChanged,
+          style: const TextStyle(fontSize: 14),
+          decoration: const InputDecoration(
+            isDense: true,
+            border: OutlineInputBorder(),
+            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           ),
         ),
       ],
@@ -537,45 +531,51 @@ class _CategoryCard extends StatelessWidget {
         children: [
           // 카테고리 헤더
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+            padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
             decoration: const BoxDecoration(
               color: Color(0xFFF8FAFC),
               borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _InlineField(
+                      _LabeledField(
+                        label: '카테고리 제목',
                         value: category.title,
-                        placeholder: '카테고리 제목',
-                        width: 130,
-                        bold: true,
                         onChanged: (v) {
                           category.title = v;
                           onChanged();
                         },
                       ),
-                      _InlineField(
-                        value: category.id,
-                        placeholder: 'id (영문)',
-                        width: 90,
-                        onChanged: (v) {
-                          category.id = v;
-                          onChanged();
-                        },
-                      ),
-                      _InlineField(
-                        value: category.description,
-                        placeholder: '설명 (선택)',
-                        width: 150,
-                        onChanged: (v) {
-                          category.description = v;
-                          onChanged();
-                        },
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _LabeledField(
+                              label: 'ID (영문)',
+                              value: category.id,
+                              onChanged: (v) {
+                                category.id = v;
+                                onChanged();
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _LabeledField(
+                              label: '설명 (선택)',
+                              value: category.description,
+                              onChanged: (v) {
+                                category.description = v;
+                                onChanged();
+                              },
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -591,23 +591,6 @@ class _CategoryCard extends StatelessWidget {
           ),
 
           const Divider(height: 1),
-
-          // 컬럼 헤더
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Row(
-              children: [
-                Expanded(flex: 3, child: _ColumnLabel('한글명')),
-                SizedBox(width: 6),
-                Expanded(flex: 3, child: _ColumnLabel('English')),
-                SizedBox(width: 6),
-                SizedBox(width: 80, child: _ColumnLabel('가격')),
-                SizedBox(width: 6),
-                Expanded(flex: 2, child: _ColumnLabel('비고')),
-                SizedBox(width: 32),
-              ],
-            ),
-          ),
 
           // 아이템 목록
           ...category.items.asMap().entries.map((entry) {
@@ -646,19 +629,6 @@ class _CategoryCard extends StatelessWidget {
   }
 }
 
-class _ColumnLabel extends StatelessWidget {
-  final String text;
-  const _ColumnLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-    );
-  }
-}
-
 // ─── 아이템 행 ────────────────────────────────────────────────────────────────
 
 class _ItemRow extends StatelessWidget {
@@ -675,65 +645,72 @@ class _ItemRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 8, 6),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(12, 0, 8, 10),
+      child: Column(
         children: [
-          Expanded(
-            flex: 3,
-            child: _ItemTextField(
-              value: item.korean,
-              placeholder: '한글명',
-              onChanged: (v) {
-                item.korean = v;
-                onChanged();
-              },
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: _ItemTextField(
+                  value: item.korean,
+                  placeholder: '한글명',
+                  onChanged: (v) {
+                    item.korean = v;
+                    onChanged();
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              SizedBox(
+                width: 90,
+                child: _PriceField(
+                  value: item.price,
+                  onChanged: (v) {
+                    item.price = v;
+                    onChanged();
+                  },
+                ),
+              ),
+              const SizedBox(width: 4),
+              SizedBox(
+                width: 32,
+                child: IconButton(
+                  icon: const Icon(Icons.close, size: 16),
+                  tooltip: '삭제',
+                  color: const Color(0xFF94A3B8),
+                  onPressed: onDelete,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 6),
-          Expanded(
-            flex: 3,
-            child: _ItemTextField(
-              value: item.english,
-              placeholder: 'English',
-              onChanged: (v) {
-                item.english = v;
-                onChanged();
-              },
-            ),
-          ),
-          const SizedBox(width: 6),
-          SizedBox(
-            width: 80,
-            child: _PriceField(
-              value: item.price,
-              onChanged: (v) {
-                item.price = v;
-                onChanged();
-              },
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            flex: 2,
-            child: _ItemTextField(
-              value: item.note,
-              placeholder: '비고',
-              onChanged: (v) {
-                item.note = v;
-                onChanged();
-              },
-            ),
-          ),
-          SizedBox(
-            width: 32,
-            child: IconButton(
-              icon: const Icon(Icons.close, size: 16),
-              tooltip: '삭제',
-              color: const Color(0xFF94A3B8),
-              onPressed: onDelete,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: _ItemTextField(
+                  value: item.english,
+                  placeholder: 'English',
+                  onChanged: (v) {
+                    item.english = v;
+                    onChanged();
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _ItemTextField(
+                  value: item.note,
+                  placeholder: '비고',
+                  onChanged: (v) {
+                    item.note = v;
+                    onChanged();
+                  },
+                ),
+              ),
+              const SizedBox(width: 36),
+            ],
           ),
         ],
       ),
@@ -853,73 +830,6 @@ class _PriceFieldState extends State<_PriceField> {
   }
 }
 
-class _InlineField extends StatefulWidget {
-  final String value;
-  final String placeholder;
-  final double width;
-  final bool bold;
-  final ValueChanged<String> onChanged;
-
-  const _InlineField({
-    required this.value,
-    required this.placeholder,
-    required this.width,
-    required this.onChanged,
-    this.bold = false,
-  });
-
-  @override
-  State<_InlineField> createState() => _InlineFieldState();
-}
-
-class _InlineFieldState extends State<_InlineField> {
-  late final TextEditingController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = TextEditingController(text: widget.value);
-  }
-
-  @override
-  void didUpdateWidget(_InlineField old) {
-    super.didUpdateWidget(old);
-    if (widget.value != _ctrl.text) {
-      _ctrl.value = TextEditingValue(
-        text: widget.value,
-        selection: TextSelection.collapsed(offset: widget.value.length),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: widget.width,
-      child: TextField(
-        controller: _ctrl,
-        onChanged: widget.onChanged,
-        style: TextStyle(
-          fontSize: widget.bold ? 14 : 12,
-          fontWeight: widget.bold ? FontWeight.w600 : FontWeight.normal,
-        ),
-        decoration: InputDecoration(
-          hintText: widget.placeholder,
-          isDense: true,
-          border: const OutlineInputBorder(),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        ),
-      ),
-    );
-  }
-}
-
 // ─── 하단 액션 바 ─────────────────────────────────────────────────────────────
 
 class _ActionBar extends StatelessWidget {
@@ -939,8 +849,9 @@ class _ActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+      padding: EdgeInsets.fromLTRB(16, 10, 16, bottomPadding + 16),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
@@ -957,46 +868,75 @@ class _ActionBar extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            dirty ? '미저장 변경 사항 있음' : '저장된 상태',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: dirty ? const Color(0xFF0F766E) : const Color(0xFF64748B),
-            ),
+          Row(
+            children: [
+              Icon(
+                dirty ? Icons.edit_outlined : Icons.check_circle_outline,
+                size: 14,
+                color: dirty
+                    ? const Color(0xFF0F766E)
+                    : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  dirty ? '저장되지 않은 변경사항' : '저장된 상태',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: dirty
+                        ? const Color(0xFF0F766E)
+                        : const Color(0xFF64748B),
+                  ),
+                ),
+              ),
+            ],
           ),
-          const Spacer(),
-          OutlinedButton(
-            onPressed: onRefresh,
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: const Text('새로고침', style: TextStyle(fontSize: 13)),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton(
-            onPressed: onReset,
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: const Text('되돌리기', style: TextStyle(fontSize: 13)),
-          ),
-          const SizedBox(width: 8),
-          FilledButton(
-            onPressed: onPush,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF0D9488),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(
-              pushing ? '반영 중...' : '메뉴판에 반영',
-              style: const TextStyle(fontSize: 13),
-            ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onRefresh,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('새로고침', style: TextStyle(fontSize: 13)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onReset,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('되돌리기', style: TextStyle(fontSize: 13)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: FilledButton(
+                  onPressed: onPush,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D9488),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    pushing ? '반영 중...' : '메뉴판에 반영',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
