@@ -1331,15 +1331,35 @@ class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
       final failed = applyResult['failed_count'] ?? 0;
       final skippedCount = skippedList.length;
 
-      final parts = <String>[
-        if (execute) '$applied건 적용 완료' else '[미리보기] $applied건 적용 예정',
-        if (failed > 0) '$failed건 실패',
-        if (skippedCount > 0) '$skippedCount건 건너눠(상품코드 없음)',
-      ];
-      messenger.showSnackBar(SnackBar(
-        content: Text(parts.join(' · ')),
-        duration: const Duration(seconds: 4),
-      ));
+      // 실패 항목 이유 추출
+      final failedItems = (applyResult['items'] as List? ?? [])
+          .whereType<Map>()
+          .where((e) => e['status'] == 'failed')
+          .toList();
+
+      if (failed > 0 && failedItems.isNotEmpty) {
+        // 실패 상세를 별도 스낵바로 표시
+        final failDetails = failedItems.map((e) {
+          final name = e['item_name'] as String? ?? '';
+          final msg = e['message'] as String? ?? '알 수 없는 오류';
+          return '· $name: $msg';
+        }).join('\n');
+        messenger.showSnackBar(SnackBar(
+          content: Text('$failed건 적용 실패\n$failDetails'),
+          backgroundColor: const Color(0xFFDC2626),
+          duration: const Duration(seconds: 8),
+        ));
+      } else {
+        final parts = <String>[
+          if (execute) '$applied건 적용 완료' else '[미리보기] $applied건 적용 예정',
+          if (failed > 0) '$failed건 실패',
+          if (skippedCount > 0) '$skippedCount건 건너뜀(상품코드 없음)',
+        ];
+        messenger.showSnackBar(SnackBar(
+          content: Text(parts.join(' · ')),
+          duration: const Duration(seconds: 4),
+        ));
+      }
       if (execute && applied is int && applied > 0) widget.onApplied();
     } catch (e) {
       if (!mounted) return;
