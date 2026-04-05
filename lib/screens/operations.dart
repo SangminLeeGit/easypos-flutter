@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'costing.dart';
 import 'menu_workspace.dart';
+import 'signage.dart';
 import 'sync.dart';
 
 /// 운영 허브 — 원가관리, 메뉴 워크스페이스, 동기화로 이동하는 허브 화면.
@@ -46,6 +47,19 @@ class OperationsScreen extends StatelessWidget {
           ),
         ),
         if (appState.hasOperatorAccess) ...[
+          const SizedBox(height: 8),
+          _OperationTile(
+            icon: Icons.tv_outlined,
+            title: '메뉴판 제어',
+            subtitle: '사이니지 서버 메뉴판 조회 · 편집 · 반영',
+            badge: 'operator',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const _FullScreenPage(
+                title: '메뉴판 제어',
+                child: SignageScreen(),
+              )),
+            ),
+          ),
           const SizedBox(height: 8),
           _OperationTile(
             icon: Icons.sync_outlined,
