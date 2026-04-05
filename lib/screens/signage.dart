@@ -524,18 +524,21 @@ class _CategoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final itemCount = category.items.length;
     return Card(
       margin: EdgeInsets.zero,
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 카테고리 헤더
           Container(
-            padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-            ),
+            padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+            color: const Color(0xFF0D9488),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -543,82 +546,155 @@ class _CategoryCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _LabeledField(
-                        label: '카테고리 제목',
-                        value: category.title,
-                        onChanged: (v) {
-                          category.title = v;
-                          onChanged();
-                        },
-                      ),
-                      const SizedBox(height: 8),
                       Row(
                         children: [
+                          const Icon(Icons.menu_book_outlined,
+                              size: 16, color: Colors.white),
+                          const SizedBox(width: 6),
                           Expanded(
-                            child: _LabeledField(
-                              label: 'ID (영문)',
-                              value: category.id,
-                              onChanged: (v) {
-                                category.id = v;
-                                onChanged();
-                              },
+                            child: Text(
+                              category.title.isEmpty ? '(제목 없음)' : category.title,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _LabeledField(
-                              label: '설명 (선택)',
-                              value: category.description,
-                              onChanged: (v) {
-                                category.description = v;
-                                onChanged();
-                              },
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$itemCount개',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ],
                       ),
+                      if (category.id.isNotEmpty || category.description.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            [category.id, category.description]
+                                .where((s) => s.isNotEmpty)
+                                .join(' · '),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.white.withValues(alpha: 0.8),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline, size: 20),
                   tooltip: '카테고리 삭제',
-                  color: const Color(0xFF94A3B8),
+                  color: Colors.white70,
                   onPressed: onDelete,
                 ),
               ],
             ),
           ),
 
-          const Divider(height: 1),
+          // 카테고리 필드 편집
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _LabeledField(
+                  label: '카테고리 제목',
+                  value: category.title,
+                  onChanged: (v) {
+                    category.title = v;
+                    onChanged();
+                  },
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _LabeledField(
+                        label: 'ID (영문)',
+                        value: category.id,
+                        onChanged: (v) {
+                          category.id = v;
+                          onChanged();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _LabeledField(
+                        label: '설명 (선택)',
+                        value: category.description,
+                        onChanged: (v) {
+                          category.description = v;
+                          onChanged();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
 
-          // 아이템 목록
-          ...category.items.asMap().entries.map((entry) {
-            final idx = entry.key;
-            final item = entry.value;
-            return _ItemRow(
-              item: item,
-              onChanged: onChanged,
-              onDelete: () {
-                category.items.removeAt(idx);
-                onChanged();
-              },
-            );
-          }),
+          const SizedBox(height: 12),
+          const Divider(height: 1, indent: 14, endIndent: 14),
+
+          if (itemCount == 0)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text(
+                  '품목이 없습니다. 아래 버튼으로 추가하세요.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                ),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(14, 10, 10, 0),
+              itemCount: itemCount,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (_, idx) => _ItemRow(
+                item: category.items[idx],
+                index: idx + 1,
+                onChanged: onChanged,
+                onDelete: () {
+                  category.items.removeAt(idx);
+                  onChanged();
+                },
+              ),
+            ),
 
           // 품목 추가 버튼
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: TextButton.icon(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+            child: OutlinedButton.icon(
               onPressed: () {
-                category.items.add(_SignageItem(korean: '', english: '', price: 0));
+                category.items.add(
+                    _SignageItem(korean: '', english: '', price: 0));
                 onChanged();
               },
               icon: const Icon(Icons.add, size: 16),
-              label: const Text('품목 추가', style: TextStyle(fontSize: 12)),
-              style: TextButton.styleFrom(
+              label: const Text('품목 추가', style: TextStyle(fontSize: 13)),
+              style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFF0D9488),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                side: const BorderSide(color: Color(0xFF0D9488)),
+                minimumSize: const Size(double.infinity, 36),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
@@ -633,84 +709,125 @@ class _CategoryCard extends StatelessWidget {
 
 class _ItemRow extends StatelessWidget {
   final _SignageItem item;
+  final int index;
   final VoidCallback onChanged;
   final VoidCallback onDelete;
 
   const _ItemRow({
     required this.item,
+    required this.index,
     required this.onChanged,
     required this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 8, 10),
-      child: Column(
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: _ItemTextField(
-                  value: item.korean,
-                  placeholder: '한글명',
-                  onChanged: (v) {
-                    item.korean = v;
-                    onChanged();
-                  },
-                ),
+          // 번호 배지
+          Container(
+            width: 24,
+            height: 24,
+            margin: const EdgeInsets.only(top: 2, right: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D9488),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              '$index',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
               ),
-              const SizedBox(width: 6),
-              SizedBox(
-                width: 90,
-                child: _PriceField(
-                  value: item.price,
-                  onChanged: (v) {
-                    item.price = v;
-                    onChanged();
-                  },
-                ),
-              ),
-              const SizedBox(width: 4),
-              SizedBox(
-                width: 32,
-                child: IconButton(
-                  icon: const Icon(Icons.close, size: 16),
-                  tooltip: '삭제',
-                  color: const Color(0xFF94A3B8),
-                  onPressed: onDelete,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                ),
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: _ItemTextField(
-                  value: item.english,
-                  placeholder: 'English',
-                  onChanged: (v) {
-                    item.english = v;
-                    onChanged();
-                  },
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 1행: 한글명 + 가격
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: _FieldWithLabel(
+                        label: '한글명',
+                        value: item.korean,
+                        placeholder: '메뉴 이름',
+                        onChanged: (v) {
+                          item.korean = v;
+                          onChanged();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 88,
+                      child: _FieldWithLabel(
+                        label: '가격 (원)',
+                        value: item.price.toString(),
+                        placeholder: '0',
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.right,
+                        onChanged: (v) {
+                          final n = int.tryParse(v);
+                          if (n != null && n >= 0) item.price = n;
+                          onChanged();
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: _ItemTextField(
-                  value: item.note,
-                  placeholder: '비고',
-                  onChanged: (v) {
-                    item.note = v;
-                    onChanged();
-                  },
+                const SizedBox(height: 6),
+                // 2행: English + 비고
+                Row(
+                  children: [
+                    Expanded(
+                      child: _FieldWithLabel(
+                        label: 'English',
+                        value: item.english,
+                        placeholder: 'Menu name',
+                        onChanged: (v) {
+                          item.english = v;
+                          onChanged();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _FieldWithLabel(
+                        label: '비고',
+                        value: item.note,
+                        placeholder: '(선택)',
+                        onChanged: (v) {
+                          item.note = v;
+                          onChanged();
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 36),
-            ],
+              ],
+            ),
+          ),
+          // 삭제 버튼
+          IconButton(
+            icon: const Icon(Icons.close, size: 16),
+            tooltip: '삭제',
+            color: const Color(0xFF94A3B8),
+            onPressed: onDelete,
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
           ),
         ],
       ),
@@ -718,22 +835,28 @@ class _ItemRow extends StatelessWidget {
   }
 }
 
-class _ItemTextField extends StatefulWidget {
+class _FieldWithLabel extends StatefulWidget {
+  final String label;
   final String value;
   final String placeholder;
   final ValueChanged<String> onChanged;
+  final TextInputType keyboardType;
+  final TextAlign textAlign;
 
-  const _ItemTextField({
+  const _FieldWithLabel({
+    required this.label,
     required this.value,
     required this.placeholder,
     required this.onChanged,
+    this.keyboardType = TextInputType.text,
+    this.textAlign = TextAlign.start,
   });
 
   @override
-  State<_ItemTextField> createState() => _ItemTextFieldState();
+  State<_FieldWithLabel> createState() => _FieldWithLabelState();
 }
 
-class _ItemTextFieldState extends State<_ItemTextField> {
+class _FieldWithLabelState extends State<_FieldWithLabel> {
   late final TextEditingController _ctrl;
 
   @override
@@ -743,10 +866,9 @@ class _ItemTextFieldState extends State<_ItemTextField> {
   }
 
   @override
-  void didUpdateWidget(_ItemTextField old) {
+  void didUpdateWidget(_FieldWithLabel old) {
     super.didUpdateWidget(old);
     if (widget.value != _ctrl.text) {
-      // 외부에서 reset된 경우만 갱신 (커서 보존)
       _ctrl.value = TextEditingValue(
         text: widget.value,
         selection: TextSelection.collapsed(offset: widget.value.length),
@@ -762,70 +884,30 @@ class _ItemTextFieldState extends State<_ItemTextField> {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: _ctrl,
-      onChanged: widget.onChanged,
-      style: const TextStyle(fontSize: 13),
-      decoration: InputDecoration(
-        hintText: widget.placeholder,
-        isDense: true,
-        border: const OutlineInputBorder(),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      ),
-    );
-  }
-}
-
-class _PriceField extends StatefulWidget {
-  final int value;
-  final ValueChanged<int> onChanged;
-
-  const _PriceField({required this.value, required this.onChanged});
-
-  @override
-  State<_PriceField> createState() => _PriceFieldState();
-}
-
-class _PriceFieldState extends State<_PriceField> {
-  late final TextEditingController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = TextEditingController(text: widget.value.toString());
-  }
-
-  @override
-  void didUpdateWidget(_PriceField old) {
-    super.didUpdateWidget(old);
-    if (widget.value.toString() != _ctrl.text) {
-      _ctrl.text = widget.value.toString();
-    }
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: _ctrl,
-      keyboardType: TextInputType.number,
-      textAlign: TextAlign.right,
-      onChanged: (v) {
-        final n = int.tryParse(v);
-        if (n != null && n >= 0) widget.onChanged(n);
-      },
-      style: const TextStyle(fontSize: 13),
-      decoration: const InputDecoration(
-        hintText: '0',
-        isDense: true,
-        border: OutlineInputBorder(),
-        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.label,
+          style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8),
+              fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 3),
+        TextField(
+          controller: _ctrl,
+          onChanged: widget.onChanged,
+          keyboardType: widget.keyboardType,
+          textAlign: widget.textAlign,
+          style: const TextStyle(fontSize: 13),
+          decoration: InputDecoration(
+            hintText: widget.placeholder,
+            isDense: true,
+            border: const OutlineInputBorder(),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          ),
+        ),
+      ],
     );
   }
 }
