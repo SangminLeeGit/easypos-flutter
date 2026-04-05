@@ -33,13 +33,6 @@ class _ProductRow {
         ].where((s) => s.isNotEmpty).join(' > '),
       );
 
-  factory _ProductRow.fromSuggestion(Map<String, dynamic> j) => _ProductRow(
-        itemCode: (j['item_code'] ?? '').toString(),
-        itemName: (j['item_name'] ?? '').toString(),
-        salePrice: _parseInt(j['avg_price']),
-        category: '',
-      );
-
   static int? _parseInt(dynamic v) {
     if (v == null) return null;
     if (v is int) return v;
@@ -285,13 +278,9 @@ class _ProductBrowserTab extends StatefulWidget {
 
 class _ProductBrowserTabState extends State<_ProductBrowserTab>
     with AutomaticKeepAliveClientMixin {
-  List<_ProductRow> _suggestions = [];
-  bool _suggestionsLoading = true;
-  String _suggestionsError = '';
-
-  List<_ProductRow> _searchResults = [];
-  bool _searchLoading = false;
-  String _searchError = '';
+  List<_ProductRow> _products = [];
+  bool _isLoading = true;
+  String _loadError = '';
   bool _hasSearched = false;
 
   final _searchController = TextEditingController();
@@ -302,7 +291,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
   @override
   void initState() {
     super.initState();
-    _loadSuggestions();
+    _loadAll();
   }
 
   @override
@@ -311,56 +300,17 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
     super.dispose();
   }
 
-  Future<void> _loadSuggestions() async {
+  Future<void> _loadAll() async {
     final appState = context.read<AppState>();
     setState(() {
-      _suggestionsLoading = true;
-      _suggestionsError = '';
-    });
-    try {
-      final result = await appState.fetchMapParsed<Map<String, dynamic>>(
-        '/api/menu-workspace/suggestions',
-        parser: (j) => j,
-        cacheTtl: const Duration(minutes: 15),
-      );
-      if (!mounted) return;
-      final list = (result.data['suggestions'] as List? ?? [])
-          .map((e) =>
-              _ProductRow.fromSuggestion(e as Map<String, dynamic>))
-          .toList();
-      setState(() {
-        _suggestions = list;
-        _suggestionsLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _suggestionsError = e.toString();
-        _suggestionsLoading = false;
-      });
-    }
-  }
-
-  Future<void> _search(String query) async {
-    final q = query.trim();
-    if (q.isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _hasSearched = false;
-        _searchError = '';
-      });
-      return;
-    }
-    final appState = context.read<AppState>();
-    setState(() {
-      _searchLoading = true;
-      _searchError = '';
-      _hasSearched = true;
+      _isLoading = true;
+      _loadError = '';
+      _hasSearched = false;
     });
     try {
       final result = await appState.fetchMapParsed<Map<String, dynamic>>(
         '/api/menu-workspace/product-registration',
-        params: {'query': q, 'refresh': 'false', 'limit': '100'},
+        params: {'query': '', 'refresh': 'false', 'cache_only': 'true'},
         parser: (j) => j,
         cacheTtl: const Duration(minutes: 10),
       );
@@ -370,14 +320,52 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
               _ProductRow.fromRegistration(e as Map<String, dynamic>))
           .toList();
       setState(() {
-        _searchResults = rows;
-        _searchLoading = false;
+        _products = rows;
+        _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _searchError = e.toString();
-        _searchLoading = false;
+        _loadError = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _search(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) {
+      _searchController.clear();
+      _loadAll();
+      return;
+    }
+    final appState = context.read<AppState>();
+    setState(() {
+      _isLoading = true;
+      _loadError = '';
+      _hasSearched = true;
+    });
+    try {
+      final result = await appState.fetchMapParsed<Map<String, dynamic>>(
+        '/api/menu-workspace/product-registration',
+        params: {'query': q, 'refresh': 'false', 'cache_only': 'true'},
+        parser: (j) => j,
+        cacheTtl: const Duration(minutes: 10),
+      );
+      if (!mounted) return;
+      final rows = (result.data['rows'] as List? ?? [])
+          .map((e) =>
+              _ProductRow.fromRegistration(e as Map<String, dynamic>))
+          .toList();
+      setState(() {
+        _products = rows;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadError = e.toString();
+        _isLoading = false;
       });
     }
   }
@@ -408,11 +396,9 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
     super.build(context);
     final appState = context.watch<AppState>();
     final isOperator = appState.hasOperatorAccess;
-    final showSearch = _hasSearched;
-    final list = showSearch ? _searchResults : _suggestions;
-    final isLoading =
-        showSearch ? _searchLoading : _suggestionsLoading;
-    final error = showSearch ? _searchError : _suggestionsError;
+    final list = _products;
+    final isLoading = _isLoading;
+    final error = _loadError;
 
     return Column(
       children: [
@@ -428,7 +414,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
                       icon: const Icon(Icons.clear),
                       onPressed: () {
                         _searchController.clear();
-                        _search('');
+                        _loadAll();
                       },
                     )
                   : null,
@@ -441,7 +427,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
             onSubmitted: _search,
             onChanged: (v) {
               setState(() {});
-              if (v.isEmpty) _search('');
+              if (v.isEmpty) _loadAll();
             },
           ),
         ),
@@ -450,7 +436,9 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
           child: Row(
             children: [
               Text(
-                showSearch ? 'POS 상품 검색 결과' : '매출 상위 메뉴',
+                _hasSearched
+                    ? 'POS 상품 검색 결과 (${_products.length}건)'
+                    : '전체 메뉴 (${_products.length}건)',
                 style: const TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 13,
@@ -458,17 +446,16 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
                 ),
               ),
               const Spacer(),
-              if (!showSearch)
-                TextButton.icon(
-                  onPressed: _loadSuggestions,
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('새로고침',
-                      style: TextStyle(fontSize: 12)),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF64748B),
-                    visualDensity: VisualDensity.compact,
-                  ),
+              TextButton.icon(
+                onPressed: _loadAll,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('새로고침',
+                    style: TextStyle(fontSize: 12)),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF64748B),
+                  visualDensity: VisualDensity.compact,
                 ),
+              ),
             ],
           ),
         ),
@@ -487,9 +474,9 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
                   : list.isEmpty
                       ? Center(
                           child: Text(
-                            showSearch
+                            _hasSearched
                                 ? '검색 결과가 없습니다.'
-                                : '매출 데이터가 없습니다.',
+                                : '상품 목록이 없습니다.',
                             style: const TextStyle(
                                 color: Color(0xFF64748B)),
                           ),
@@ -505,7 +492,6 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
                             onTap: isOperator
                                 ? () => _openPriceChangeSheet(list[i])
                                 : null,
-                            rank: !showSearch ? i + 1 : null,
                           ),
                         ),
         ),
@@ -531,12 +517,10 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
 class _ProductCard extends StatelessWidget {
   final _ProductRow product;
   final VoidCallback? onTap;
-  final int? rank;
 
   const _ProductCard({
     required this.product,
     this.onTap,
-    this.rank,
   });
 
   @override
@@ -545,25 +529,8 @@ class _ProductCard extends StatelessWidget {
       margin: EdgeInsets.zero,
       child: ListTile(
         onTap: onTap,
-        leading: rank != null
-            ? CircleAvatar(
-                radius: 16,
-                backgroundColor: rank! <= 3
-                    ? const Color.fromRGBO(13, 148, 136, 0.15)
-                    : const Color(0xFFF1F5F9),
-                child: Text(
-                  '$rank',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: rank! <= 3
-                        ? const Color(0xFF0F766E)
-                        : const Color(0xFF64748B),
-                  ),
-                ),
-              )
-            : const Icon(Icons.inventory_2_outlined,
-                size: 20, color: Color(0xFF94A3B8)),
+        leading: const Icon(Icons.inventory_2_outlined,
+            size: 20, color: Color(0xFF94A3B8)),
         title: Text(
           product.itemName,
           style: const TextStyle(
