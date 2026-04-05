@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/analytics_models.dart';
-import '../services/api.dart';
 import '../models/dashboard_model.dart';
 import '../state/app_state.dart';
 import '../widgets/cache_notice.dart';
@@ -1547,14 +1546,14 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
             ],
           ),
           const SizedBox(height: 16),
-          ...quadrants.entries.where((e) => e.value.isNotEmpty).map((entry) {
+          ...quadrants.entries.where((e) => e.value.isNotEmpty).map<Widget>((entry) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Panel(
                 title: _quadrantTitle(entry.key),
                 subtitle: _quadrantSubtitle(entry.key),
                 child: Column(
-                  children: entry.value.take(8).map((item) {
+                  children: entry.value.take(8).map<Widget>((item) {
                     return ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
@@ -1571,7 +1570,7 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
                 ),
               ),
             );
-          }).toList(growable: false),
+          }),
         ],
       ),
     );

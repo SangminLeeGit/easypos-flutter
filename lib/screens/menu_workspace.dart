@@ -522,16 +522,20 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
           ),
           const SizedBox(height: 16),
-          ...List.generate(statuses.length, (i) {
-            return RadioListTile<String>(
-              title: Text(labels[i]),
-              value: statuses[i],
-              groupValue: _selectedStatus,
-              onChanged: (v) => setState(() => _selectedStatus = v!),
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-            );
-          }),
+          RadioGroup<String>(
+            groupValue: _selectedStatus,
+            onChanged: (v) => setState(() => _selectedStatus = v!),
+            child: Column(
+              children: List.generate(statuses.length, (i) {
+                return RadioListTile<String>(
+                  title: Text(labels[i]),
+                  value: statuses[i],
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                );
+              }),
+            ),
+          ),
           if (_error.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(_error, style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13)),

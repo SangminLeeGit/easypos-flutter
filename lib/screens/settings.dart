@@ -521,14 +521,16 @@ class _UserManagementScreenState extends State<_UserManagementScreen> {
       _error = '';
     });
     try {
-      final data = await appState.fetchListParsed<_AdminUser>(
+      final result = await appState.fetchListParsed<List<_AdminUser>>(
         '/api/auth/users',
-        _AdminUser.fromJson,
+        parser: (json) => json
+            .map((e) => _AdminUser.fromJson(e as Map<String, dynamic>))
+            .toList(),
         cacheTtl: Duration.zero,
       );
       if (!mounted) return;
       setState(() {
-        _users = data;
+        _users = result.data;
         _loading = false;
       });
     } catch (e) {
@@ -550,20 +552,22 @@ class _UserManagementScreenState extends State<_UserManagementScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           title: Text('${user.loginId} 권한 변경'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: roles
-                .map(
-                  (r) => RadioListTile<String>(
-                    value: r,
-                    groupValue: selected,
-                    title: Text(r),
-                    onChanged: (v) {
-                      if (v != null) setDialogState(() => selected = v);
-                    },
-                  ),
-                )
-                .toList(),
+          content: RadioGroup<String>(
+            groupValue: selected,
+            onChanged: (v) {
+              if (v != null) setDialogState(() => selected = v);
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: roles
+                  .map(
+                    (r) => RadioListTile<String>(
+                      value: r,
+                      title: Text(r),
+                    ),
+                  )
+                  .toList(),
+            ),
           ),
           actions: [
             TextButton(
@@ -687,14 +691,16 @@ class _AuditLogScreenState extends State<_AuditLogScreen> {
       _error = '';
     });
     try {
-      final data = await appState.fetchListParsed<_AuditEntry>(
+      final result = await appState.fetchListParsed<List<_AuditEntry>>(
         '/api/auth/audit-logs',
-        _AuditEntry.fromJson,
+        parser: (json) => json
+            .map((e) => _AuditEntry.fromJson(e as Map<String, dynamic>))
+            .toList(),
         cacheTtl: Duration.zero,
       );
       if (!mounted) return;
       setState(() {
-        _entries = data;
+        _entries = result.data;
         _loading = false;
       });
     } catch (e) {

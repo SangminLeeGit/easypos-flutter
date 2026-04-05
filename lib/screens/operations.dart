@@ -17,7 +17,7 @@ class OperationsScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _SectionHeader(
+        const _SectionHeader(
           title: '운영 도구',
           subtitle: '매장 운영에 필요한 도구 모음입니다.',
         ),
