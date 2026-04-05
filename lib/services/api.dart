@@ -30,6 +30,17 @@ class ApiService {
     final withScheme = trimmed.contains('://') ? trimmed : 'http://$trimmed';
     final uri = Uri.parse(withScheme);
 
+    // HTTPS URLs (e.g. Cloudflare tunnel) — don't append port.
+    // Also strip any non-standard port that may have been wrongly stored previously.
+    if (uri.scheme == 'https') {
+      if (uri.hasPort && uri.port != 443) {
+        return Uri(scheme: uri.scheme, host: uri.host, path: uri.path)
+            .toString()
+            .replaceAll(RegExp(r'/$'), '');
+      }
+      return uri.toString().replaceAll(RegExp(r'/$'), '');
+    }
+
     if (uri.hasPort) {
       return uri.toString().replaceAll(RegExp(r'/$'), '');
     }
