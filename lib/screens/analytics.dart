@@ -15,52 +15,30 @@ class AnalyticsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
+    return const DefaultTabController(
       length: 10,
       child: Column(
         children: [
-          Container(
+          ColoredBox(
             color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '백엔드 확장 분석 모듈',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF0F172A),
-                      ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  '웹 콘솔과 같은 분석 API 를 직접 사용합니다. 기간별 리포트와 비교 모듈을 모바일에서 확인할 수 있습니다.',
-                  style: TextStyle(
-                    color: Color(0xFF64748B),
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const TabBar(
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  tabs: [
-                    Tab(text: '월간'),
-                    Tab(text: '품목'),
-                    Tab(text: '시간대'),
-                    Tab(text: '요일'),
-                    Tab(text: '결제'),
-                    Tab(text: '비교'),
-                    Tab(text: '트렌드'),
-                    Tab(text: '메뉴공학'),
-                    Tab(text: '예측'),
-                    Tab(text: 'ABC'),
-                  ],
-                ),
+            child: TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              tabs: [
+                Tab(text: '월간'),
+                Tab(text: '품목'),
+                Tab(text: '시간대'),
+                Tab(text: '요일'),
+                Tab(text: '결제'),
+                Tab(text: '비교'),
+                Tab(text: '트렌드'),
+                Tab(text: '메뉴공학'),
+                Tab(text: '예측'),
+                Tab(text: 'ABC'),
               ],
             ),
           ),
-          const Expanded(
+          Expanded(
             child: TabBarView(
               children: [
                 _MonthlyTab(),
