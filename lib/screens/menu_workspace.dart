@@ -53,8 +53,8 @@ class MenuWorkspaceScreen extends StatelessWidget {
         children: [
           const TabBar(
             tabs: [
-              Tab(text: '작업 목록'),
               Tab(text: '메뉴 선택'),
+              Tab(text: '작업 목록'),
             ],
             labelColor: Color(0xFF0D9488),
             unselectedLabelColor: Color(0xFF64748B),
@@ -64,8 +64,8 @@ class MenuWorkspaceScreen extends StatelessWidget {
           Expanded(
             child: TabBarView(
               children: [
-                _WorkspaceTab(),
                 _ProductBrowserTab(),
+                _WorkspaceTab(),
               ],
             ),
           ),
