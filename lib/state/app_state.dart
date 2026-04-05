@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api.dart';
@@ -65,6 +66,11 @@ class AppState extends ChangeNotifier {
   static const String _apiBaseUrlKey = 'api_base_url';
   static const String _setupRequiredKey = 'auth_setup_required';
   static const String _bootstrapConfiguredKey = 'auth_bootstrap_configured';
+  static const String _sessionCookieKey = 'session_cookie';
+
+  static const _secureStorage = FlutterSecureStorage(
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+  );
 
   String _apiBaseUrl;
   late SharedPreferences _prefs;
@@ -115,6 +121,12 @@ class AppState extends ChangeNotifier {
     _bootstrapConfigured = _prefs.getBool(_bootstrapConfiguredKey) ?? false;
     _refreshCacheCount();
 
+    // Restore persisted session cookie so the user doesn't need to log in again.
+    final savedCookie = await _secureStorage.read(key: _sessionCookieKey);
+    if (savedCookie != null && savedCookie.isNotEmpty) {
+      _sessionCookie = savedCookie;
+    }
+
     try {
       await refreshSession(notify: false);
     } catch (_) {
@@ -140,6 +152,10 @@ class AppState extends ChangeNotifier {
       if (response.sessionCookie != null &&
           response.sessionCookie!.isNotEmpty) {
         _sessionCookie = response.sessionCookie;
+        await _secureStorage.write(
+          key: _sessionCookieKey,
+          value: _sessionCookie,
+        );
       }
 
       final user = payload['user'];
@@ -192,6 +208,7 @@ class AppState extends ChangeNotifier {
     _authenticated = true;
     _offlineMode = false;
     _sessionCookie = response.sessionCookie;
+    await _secureStorage.write(key: _sessionCookieKey, value: _sessionCookie);
     _csrfToken = response.data['csrf_token']?.toString();
     _loginId = user['login_id']?.toString();
     _role = user['role']?.toString();
@@ -430,6 +447,10 @@ class AppState extends ChangeNotifier {
       if (response.sessionCookie != null &&
           response.sessionCookie!.isNotEmpty) {
         _sessionCookie = response.sessionCookie;
+        await _secureStorage.write(
+          key: _sessionCookieKey,
+          value: _sessionCookie,
+        );
       }
       return response;
     } on ApiException catch (error) {
@@ -469,6 +490,7 @@ class AppState extends ChangeNotifier {
     _loginId = null;
     _role = null;
     _lastSessionSyncAt = null;
+    await _secureStorage.delete(key: _sessionCookieKey);
 
     if (!preserveSetupFlags) {
       _setupRequired = false;
