@@ -144,7 +144,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 6),
         const Text(
-          '기본 서버 주소는 192.168.1.220:8087 입니다.',
+          '기본 서버 주소는 pos.cafe-bridge.org 입니다.',
           style: TextStyle(color: Color(0xFF64748B)),
         ),
         const SizedBox(height: 24),
@@ -161,7 +161,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           controller: _controller,
           decoration: const InputDecoration(
             border: OutlineInputBorder(),
-            hintText: 'http://192.168.1.220:8087',
+            hintText: 'https://pos.cafe-bridge.org',
           ),
         ),
         const SizedBox(height: 12),

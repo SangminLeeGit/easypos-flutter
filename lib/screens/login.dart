@@ -107,7 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
             controller: controller,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
-              hintText: 'http://192.168.1.220:8087',
+              hintText: 'https://pos.cafe-bridge.org',
             ),
           ),
           actions: [

@@ -15,7 +15,7 @@ class ApiResponse<T> {
 
 class ApiService {
   static const Duration _timeout = Duration(seconds: 15);
-  static const String _defaultBaseUrl = 'http://192.168.1.220:8087';
+  static const String _defaultBaseUrl = 'https://pos.cafe-bridge.org';
 
   static String defaultBaseUrl() {
     return _defaultBaseUrl;
